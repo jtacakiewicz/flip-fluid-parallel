@@ -2,6 +2,7 @@
 #include "geometry_func.hpp"
 #include "time.hpp"
 #include <SFML/Graphics/CircleShape.hpp>
+#include <SFML/Graphics/PrimitiveType.hpp>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -9,7 +10,6 @@
 #include <iostream>
 #include <stdexcept>
 #include <unordered_set>
-#include <omp.h>
 float Particles::radius = 3.f;
 float Particles::diameter = Particles::radius * 2.f;
 uint32_t Particles::max_particle_count = 2500;
@@ -138,21 +138,22 @@ void constraint(Particles& particles, AABB area) {
     }
 }
 void draw(Particles& particles, sf::RenderTarget& window, sf::Color color) {
-    sf::VertexArray quads(sf::Quads, 4 * Particles::max_particle_count);
+    sf::VertexArray quads(sf::PrimitiveType::Triangles, 6 * Particles::max_particle_count);
 
     for(int i = 0; i < Particles::max_particle_count; i += 1) { 
         auto pos = particles.position[i];
         pos.y = window.getSize().y - pos.y;
         // define the position of the triangle's points
-        quads[i * 4 + 0].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, particles.radius);
-        quads[i * 4 + 1].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(particles.radius, 0);
-        quads[i * 4 + 2].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, -particles.radius);
-        quads[i * 4 + 3].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(-particles.radius, 0);
+        quads[i * 6 + 0].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, particles.radius);
+        quads[i * 6 + 1].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(particles.radius, 0);
+        quads[i * 6 + 2].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, -particles.radius);
 
-        quads[i * 4 + 0].color = color;
-        quads[i * 4 + 1].color = color;
-        quads[i * 4 + 2].color = color;
-        quads[i * 4 + 3].color = color;
+        quads[i * 6 + 3].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, -particles.radius);
+        quads[i * 6 + 4].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(-particles.radius, 0);
+        quads[i * 6 + 5].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, particles.radius);
+
+        for(int j = 0; j < 6; j++)
+            quads[i * 6 + j].color = color;
     }
     window.draw(quads);
 }

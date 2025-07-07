@@ -82,7 +82,7 @@ When using application:
     }
     auto fluid_cell_size = particles.diameter * cell_size_scale;
     AABB screen_area = AABB::CreateMinSize({0, 0}, {w, h});
-    RenderWindow window(VideoMode(w, h), "demo");
+    RenderWindow window(VideoMode(Vector2u(w, h)), "demo");
     auto area = screen_area;
     area.setSize(area.size() * 0.75f);
     init(particles, area, 1.5f);
@@ -111,15 +111,14 @@ When using application:
     Stopwatch report_clock;
     report_clock.restart();
     while (window.isOpen()) {
-        Event event;
-        while (window.pollEvent(event)) {
-
-            if (event.type == Event::Closed) {
+        while (const std::optional event = window.pollEvent())
+        {
+            if (event->is<sf::Event::Closed>())
                 window.close();
-            }
         }
+
         static vec2f last_mouse_pos;
-        auto posi = sf::Mouse().getPosition(window);
+        auto posi = sf::Mouse::getPosition(window);
         vec2f mouse_pos  = {(float)posi.x, (float)posi.y};
         mouse_pos.y = window.getSize().y - mouse_pos.y;
         vec2f mouse_dir = mouse_pos - last_mouse_pos;
@@ -198,7 +197,7 @@ When using application:
             draw(particles, window, Color(70, 70, 250));
         sf::CircleShape cs(brush_size);
         cs.setOrigin({brush_size, brush_size});
-        cs.setPosition(mouse_pos.x, screen_area.size().y - mouse_pos.y);
+        cs.setPosition({mouse_pos.x, screen_area.size().y - mouse_pos.y});
         cs.setFillColor(Color(0, 0, 0, 0));
         cs.setOutlineColor(Color(255, 255, 255));
         cs.setOutlineThickness(2.f);

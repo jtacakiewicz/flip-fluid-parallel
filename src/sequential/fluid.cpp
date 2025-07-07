@@ -292,13 +292,12 @@ std::map<std::string, float> Fluid::simulate(Particles& particles, AABB sim_area
 }
 void Fluid::draw(AABB area, sf::RenderTarget &window,
           std::unordered_map<eCellTypes, Color> color_table) {
-    sf::Image img;
-    img.create(m_width, m_height);
+    sf::Image img(sf::Vector2u(m_width, m_height));
     for (int i = 0; i < m_height; i++) {
         for (int j = 0; j < m_width; j++) {
             auto type = cell_type[i + j * m_height];
             if (!color_table.contains(type)) {
-                img.setPixel(j, m_height - i - 1, sf::Color(255, 0, 255));
+                img.setPixel(sf::Vector2u(j, m_height - i - 1), sf::Color(255, 0, 255));
             } else if (type == eCellTypes::Fluid) {
                 auto point_density = particle_density[i + j * m_height];
                 auto color = color_table.at(type);
@@ -308,16 +307,15 @@ void Fluid::draw(AABB area, sf::RenderTarget &window,
                     color.g *= d;
                     color.b *= d;
                 }
-                img.setPixel(j, m_height - i - 1, color);
+                img.setPixel(sf::Vector2u(j, m_height - i - 1), color);
             }else {
-                img.setPixel(j, m_height - i - 1, color_table.at(type));
+                img.setPixel(sf::Vector2u(j, m_height - i - 1), color_table.at(type));
             }
         }
     }
     sf::Texture tex;
-    tex.loadFromImage(img);
-    sf::Sprite spr;
-    spr.setTexture(tex);
+    auto success = tex.loadFromImage(img);
+    sf::Sprite spr(tex);
     vec2f scale = vec2f(area.size().x / m_width, area.size().y / m_height);
     spr.setScale(scale);
     spr.setPosition(area.bl());
