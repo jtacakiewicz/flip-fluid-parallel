@@ -1,4 +1,12 @@
-find_package(SFML 2.5.1 COMPONENTS system window graphics network audio REQUIRED)
+include(FetchContent)
+FetchContent_Declare(SFML
+    GIT_REPOSITORY https://github.com/SFML/SFML.git
+    GIT_TAG 3.0.1
+    GIT_SHALLOW ON
+    EXCLUDE_FROM_ALL
+    SYSTEM)
+FetchContent_MakeAvailable(SFML)
+
 
 
 set(SEQ_DIR "./sequential")
@@ -76,7 +84,6 @@ if(BUILD_ALL)
 
     target_link_libraries(fluid-sim-omp PRIVATE sfml-graphics )
     target_include_directories(fluid-sim-omp PRIVATE "${SFML_INCLUDE_DIR}")
-    find_package(OpenMP REQUIRED)
     target_link_libraries(fluid-sim-omp PRIVATE OpenMP::OpenMP_CXX)
 
     target_link_libraries(fluid-sim-cuda
@@ -85,7 +92,6 @@ if(BUILD_ALL)
 
     target_link_libraries(fluid-sim-cuda PRIVATE sfml-graphics )
     target_include_directories(fluid-sim-cuda PRIVATE "${SFML_INCLUDE_DIR}")
-    find_package(OpenMP REQUIRED)
     target_link_libraries(fluid-sim-cuda PRIVATE OpenMP::OpenMP_CXX)
 elseif(USE_OMP)
     message(STATUS "Using openMP code")
@@ -93,6 +99,7 @@ elseif(USE_OMP)
         ${SOURCE_FILES} ${HEADER_FILES} ${OPENMP_SOURCE_FILES} ${OPENMP_HEADER_FILES}
     )
     target_include_directories(fluid-sim PRIVATE ${OPENMP_DIR})
+    target_link_libraries(fluid-sim PRIVATE OpenMP::OpenMP_CXX)
 elseif(USE_CUDA)
     message(STATUS "Using cuda code")
     add_executable(fluid-sim
@@ -109,14 +116,8 @@ else()
 endif()
 
 if(NOT BUILD_ALL)
-    target_link_libraries(fluid-sim
-      PUBLIC  sfml-graphics sfml-window sfml-system
-    )
-
-    target_link_libraries(fluid-sim PRIVATE sfml-graphics )
+    target_link_libraries(fluid-sim PUBLIC  sfml-graphics sfml-window sfml-system)
     target_include_directories(fluid-sim PRIVATE "${SFML_INCLUDE_DIR}")
-    find_package(OpenMP REQUIRED)
-    target_link_libraries(fluid-sim PRIVATE OpenMP::OpenMP_CXX)
 endif()
 # target_link_libraries(fluid-sim PRIVATE "${OpenMP_CXX_FLAGS}")
 # target_compile_options(fluid-sim PRIVATE "${OpenMP_CXX_FLAGS}")
