@@ -6,6 +6,7 @@ Fluid::Fluid(float cell_size, int width, int height) : m_cell_size(cell_size), m
     solid = std::vector<float>(m_num_cells, 1.f);
     particle_density = std::vector<float>(m_num_cells, 0.f);
     pressure = std::vector<float>(m_num_cells, 0.f);
+    smoke = std::vector<float>(m_num_cells, 0.f);
 
     velocities = std::vector<vec2f>(m_num_cells, vec2f(0, 0));
     prev_velocities = std::vector<vec2f>(m_num_cells, vec2f(0, 0));
@@ -15,15 +16,75 @@ Fluid::Fluid(float cell_size, int width, int height) : m_cell_size(cell_size), m
         for(int j = 0; j < m_width; j++) {
             if(j == 0 || i == 0 || i == m_height - 1 || j == m_width - 1)
                 solid[i * width + j] = 0.f;
+            if(i > 10 && i < 20 && j > 10 && j < 20) {
+                smoke[i * width + j] = 1.f;
+            }
         }
     }
+}
+float Fluid::sampleField(float x, float y, float* field, float dx_offset, float dy_offset) const {
+    float inv_csize = 1.0 / m_cell_size;
+    float half_csize = 0.5 * m_cell_size;
+
+    x = std::clamp(x, m_cell_size, m_width * m_cell_size);
+    y = std::clamp(y, m_cell_size, m_height * m_cell_size);
+
+    float dx = (isnan(dx_offset) ? half_csize : dx_offset);
+    float dy = (isnan(dy_offset) ? half_csize : dy_offset);
+
+    // switch (field) {
+    // 	case U_FIELD: f = &hor_vel; dy = h2; break;
+    // 	case V_FIELD: f = &vert_vel; dx = h2; break;
+    // 	case S_FIELD: f = &smoke; dx = h2; dy = h2; break;
+    // 	case X_FIELD: f = &fdX; dx = h2; dy = h2; break;
+    // 	case Y_FIELD: f = &fdY; dx = h2; dy = h2; break;
+    // }
+
+    float x0 = std::fminf(std::floorf((x-dx)*inv_csize), (float)m_width-1.f);
+    float tx = (x - dx - x0*m_cell_size) * inv_csize;
+    float x1 = std::fminf(x0 + 1, m_width-1.f);
+
+    float y0 = std::fminf(std::floorf((y-dy)*inv_csize), (float)m_height-1.f);
+    float ty = (y - dy - y0*m_cell_size) * inv_csize;
+    float y1 = std::fminf(y0 + 1, m_height-1.f);
+
+    float sx = 1.0 - tx;
+    float sy = 1.0 - ty;
+
+    auto n = m_width;
+    float val = sx*sy * field[int(x0 + y0*n)] +
+        tx*sy * field[int(x1 + y0*n)] +
+        tx*ty * field[int(x1 + y1*n)] +
+        sx*ty * field[int(x0 + y1*n)];
+
+    return val;
+}
+
+void Fluid::advectAny(float dt, std::vector<float>& vec, float dx, float dy) const {
+    auto temporary = vec;
+    auto half_size = 0.5 * m_cell_size;
+    auto n = m_width;
+
+    for (auto j = 0; j < m_height-1; j++) {
+        for (auto i = 0; i < m_width-1; i++) {
+            if (solid[i + j * m_width] != 0.0) {
+                auto uu = (velocities[i + j * n].x + velocities[i+1 + j * n].x)*0.5;
+                auto vv = (velocities[i + j * n].y + velocities[i + (j+1) * n].y)*0.5;
+                auto x = i*m_cell_size + half_size - dt*uu;
+                auto y = j*m_cell_size + half_size - dt*vv;
+
+                temporary[i + j * n] = sampleField(x,y, vec.data(), dx, dy);
+            }
+        }	 
+    }
+    std::swap(vec, temporary);
 }
 void Fluid::updateParticleDensity(Particles& particles)
 {
     int n = m_width;
     float h = m_cell_size;
-    float h1 = 1.f / m_cell_size;
-    float h2 = 0.5 * h;
+    float inv_csize = 1.f / m_cell_size;
+    float half_csize = 0.5 * h;
 
     std::fill(particle_density.begin(), particle_density.end(), 0.f);
 
@@ -31,12 +92,12 @@ void Fluid::updateParticleDensity(Particles& particles)
         auto x = particles.position[i].x;
         auto y = particles.position[i].y;
 
-        auto x0 = floorf((x - h2) * h1);
-        auto tx = ((x - h2) - x0 * h) * h1;
+        auto x0 = floorf((x - half_csize) * inv_csize);
+        auto tx = ((x - half_csize) - x0 * h) * inv_csize;
         auto x1 = fmin(x0 + 1, m_width-2);
         
-        auto y0 = floorf((y-h2)*h1);
-        auto ty = ((y - h2) - y0*h) * h1;
+        auto y0 = floorf((y-half_csize)*inv_csize);
+        auto ty = ((y - half_csize) - y0*h) * inv_csize;
         auto y1 = fmin(y0 + 1, m_height-2);
 
         auto sx = 1.0 - tx;
@@ -281,6 +342,7 @@ std::map<std::string, float> Fluid::simulate(Particles& particles, AABB sim_area
         updateParticleDensity(particles);
         bench["fluid::density"] += local_stop.restart();
         solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
+        advectAny(sdt, smoke);
         bench["fluid::incompressibility"] += local_stop.restart();
         transferVelocities(false, flipRatio, particles);
         bench["fluid::transfer2"] += local_stop.restart();
@@ -305,6 +367,9 @@ void Fluid::draw(AABB area, sf::RenderTarget &window,
                     color.b *= d;
                 }
                 img.setPixel(sf::Vector2u(j, m_height - i - 1), color);
+            }else if (smoke[i * m_width + j] != 0.f) {
+                uint8_t val = 255 *smoke[i * m_width + j]; 
+                img.setPixel(sf::Vector2u(j, m_height - i - 1), sf::Color(val, val, val));
             }else {
                 img.setPixel(sf::Vector2u(j, m_height - i - 1), color_table.at(type));
             }

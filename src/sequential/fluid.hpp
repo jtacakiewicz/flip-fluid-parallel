@@ -6,6 +6,7 @@
 #include "SFML/Graphics/RenderTarget.hpp"
 #include "particle.hpp"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <map>
 #include <unordered_map>
@@ -27,11 +28,17 @@ class Fluid {
     std::vector<eCellTypes> cell_type;
     std::vector<float> solid;
     std::vector<float> pressure;
+    std::vector<float> smoke;
     std::vector<vec2f> prev_velocities;
     std::vector<vec2f> velocities;
     std::vector<vec2f> velocities_diff;
     std::vector<float> particle_density;
     float particleRestDensity = 0;
+    //x and y are not in grid coordinates but in global
+    float sampleField(float x, float y, float* field, float dx_offset = NAN, float dy_offset = NAN) const;
+
+    void advectAny(float dt, std::vector<float>& vec, float dx_offset = NAN, float dy_offset = NAN) const;
+
 public:
     float density = 1;
     float flipRatio = 0.9f;
