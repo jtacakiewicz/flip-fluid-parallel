@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
     int numFluidIters = 32;
     float overrelaxation = 1.9f;
     float cell_size_scale = 3.f;
-    float raporting_interval = 0.125f;
+    float raporting_interval = 1.f;
     bool pushOut = true;
     Particles particles;
     std::string help_msg = R"""(
@@ -190,9 +190,14 @@ When using application:
         }else {
             pressed = false;
         }
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S)) {
+            int x = mouse_pos.x / fluid.cell_size();
+            int y = mouse_pos.y / fluid.cell_size();
+            fluid.smoke[y * fluid.width() + x] = 1.f;
+        }
 
         if(drawGrid)
-            fluid.draw(screen_area, window);
+            fluid.draw(screen_area, particles, window);
         if(drawParticles)
             draw(particles, window, Color(70, 70, 250));
         sf::CircleShape cs(brush_size);
