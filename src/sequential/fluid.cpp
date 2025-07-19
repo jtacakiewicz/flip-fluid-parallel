@@ -1,5 +1,7 @@
 #include "fluid.hpp"
+#include "cuda/particle.hpp"
 #include "time.hpp"
+#include <algorithm>
 #include <vector>
 Fluid::Fluid(float cell_size, int width, int height) : m_cell_size(cell_size), m_width(width), m_height(height), m_num_cells(width * height){
     cell_color = std::vector<Color>(m_num_cells);
@@ -69,6 +71,22 @@ void Fluid::updateParticleDensity(Particles& particles)
             particleRestDensity = sum / numFluidCells;
     }
 }
+std::tuple<float, float, float, float> combineShares(float share0_x, float share0_y) {
+    auto share1_x = 1.0 - share0_x;
+    auto share1_y = 1.0 - share0_y;
+
+    auto d0 = share1_x*share1_y;
+    auto d1 = share0_x*share1_y;
+    auto d2 = share0_x*share0_y;
+    auto d3 = share1_x*share0_y;
+    return {d0, d1, d2, d3};
+}
+std::tuple<float, float, float> getCoords(float coord, float inv_cell, float limit) {
+    auto v0 = fmin(floorf(coord*inv_cell), limit);
+    auto share_v = (coord - v0/inv_cell) * inv_cell;
+    auto v1 = fmin(v0 + 1, limit);
+    return {share_v, v0, v1};
+}
 void Fluid::transferVelocitiesToGrid(float flipRatio, Particles& particles) {
     auto inv_cell_size = 1.f / m_cell_size;
     auto half_cell_size = 0.5 * m_cell_size;
@@ -87,15 +105,10 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles& particles) {
         if (cell_type[cellNr] == eCellTypes::Air) {
             cell_type[cellNr] = eCellTypes::Fluid;
         }
-        velocities[cellNr].x = 0;
-        velocities[cellNr].y = 0;
-        velocities[xi+1 + yi * m_width].x = 0;
-        velocities[xi+1 + yi * m_width].y = 0;
-        velocities[xi + (yi+1) * m_width].x = 0;
-        velocities[xi + (yi+1) * m_width].y = 0;
     }
 
     std::fill(velocities_diff.begin(), velocities_diff.end(), vec2f(0, 0));
+    std::fill(velocities.begin(), velocities.end(), vec2f(0, 0));
     auto vel = [&](int idx, int component) -> float&{
         if(component == 0) {
             return velocities[idx].x;
@@ -114,56 +127,6 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles& particles) {
         }
         return velocities_diff[idx].y;
     };
-    for (auto component = 0; component < 2; component++) {
-        auto offset_x = component == 0 ? 0.0 : half_cell_size;
-        auto offset_y = component == 0 ? half_cell_size : 0.0;
-
-
-        for (auto i = 0; i < Particles::max_particle_count; i++) {
-            auto x = particles.position[i].x;
-            auto y = particles.position[i].y;
-
-            // x = std::clamp(x, h, (m_width - 1) * h);
-            // y = std::clamp(y, h, (m_height - 1) * h);
-
-            auto x0 = fmin(floorf((x - offset_x) * inv_cell_size), m_width - 2);
-            auto share0_x = ((x - offset_x) - x0 * m_cell_size) * inv_cell_size;
-            auto x1 = fmin(x0 + 1, m_width-2);
-            
-            auto y0 = fmin(floorf((y-offset_y)*inv_cell_size), m_height-2);
-            auto share0_y = ((y - offset_y) - y0*m_cell_size) * inv_cell_size;
-            auto y1 = fmin(y0 + 1, m_height-2);
-
-            auto share1_x = 1.0 - share0_x;
-            auto share1_y = 1.0 - share0_y;
-
-            auto d0 = share1_x*share1_y;
-            auto d1 = share0_x*share1_y;
-            auto d2 = share0_x*share0_y;
-            auto d3 = share1_x*share0_y;
-
-            auto bl = x0 + y0 * m_width;
-            auto br = x1 + y0 * m_width;
-            auto tr = x1 + y1 * m_width;
-            auto tl = x0 + y1 * m_width;
-
-            auto pv = particles.velocity[i].x;
-            if(component == 1)
-                pv = particles.velocity[i].y;
-            diff(bl, component) += d0;
-            diff(br, component) += d1;
-            diff(tr, component) += d2;
-            diff(tl, component) += d3;
-        }
-    }
-    for(int i = 0; i < m_num_cells; i++) {
-        if(diff(i, 0) > 0.f) {
-            vel(i, 0) = 0;
-        }
-        if(diff(i, 1) > 0.f) {
-            vel(i, 1) = 0;
-        }
-    }
 
     for (auto component = 0; component < 2; component++) {
         auto offset_x = component == 0 ? 0.0 : half_cell_size;
@@ -176,21 +139,10 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles& particles) {
             // x = std::clamp(x, h, (m_width - 1) * h);
             // y = std::clamp(y, h, (m_height - 1) * h);
 
-            auto x0 = fmin(floorf((x - offset_x) * inv_cell_size), m_width - 2);
-            auto share0_x = ((x - offset_x) - x0 * m_cell_size) * inv_cell_size;
-            auto x1 = fmin(x0 + 1, m_width-2);
-            
-            auto y0 = fmin(floorf((y-offset_y)*inv_cell_size), m_height-2);
-            auto share0_y = ((y - offset_y) - y0*m_cell_size) * inv_cell_size;
-            auto y1 = fmin(y0 + 1, m_height-2);
+            auto [share0_x, x0, x1] = getCoords(x - offset_x, inv_cell_size, m_width - 2);
+            auto [share0_y, y0, y1] = getCoords(y - offset_y, inv_cell_size, m_height - 2);
 
-            auto share1_x = 1.0 - share0_x;
-            auto share1_y = 1.0 - share0_y;
-
-            auto d0 = share1_x*share1_y;
-            auto d1 = share0_x*share1_y;
-            auto d2 = share0_x*share0_y;
-            auto d3 = share1_x*share0_y;
+            auto [d0, d1, d2, d3] = combineShares(share0_x, share0_y);
 
             auto bl = x0 + y0 * m_width;
             auto br = x1 + y0 * m_width;
@@ -201,6 +153,12 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles& particles) {
             auto pv = particles.velocity[i].x;
             if(component == 1)
                 pv = particles.velocity[i].y;
+
+            diff(bl, component) += d0;
+            diff(br, component) += d1;
+            diff(tr, component) += d2;
+            diff(tl, component) += d3;
+
             vel(bl, component) += pv * d0;
             vel(br, component) += pv * d1;
             vel(tr, component) += pv * d2;
@@ -222,6 +180,12 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles& particles) {
                         velocities[i + j * m_width].y = prev_velocities[i + j * m_width].y;
                 }
             }
+        }
+    }
+    for(int i = 0; i < m_num_cells; i++) {
+        for(int c = 0; c < 2; c++) {
+            if(diff(i, c) <= 0.f)
+                vel(i, c) = prev_vel(i, c);
         }
     }
 }
@@ -256,24 +220,10 @@ void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles& particles) {
             auto x = particles.position[i].x;
             auto y = particles.position[i].y;
 
-            // x = std::clamp(x, h, (m_width - 1) * h);
-            // y = std::clamp(y, h, (m_height - 1) * h);
+            auto [share0_x, x0, x1] = getCoords(x - offset_x, inv_cell_size, m_width - 2);
+            auto [share0_y, y0, y1] = getCoords(y - offset_y, inv_cell_size, m_height - 2);
 
-            auto x0 = fmin(floorf((x - offset_x) * inv_cell_size), m_width - 2);
-            auto share0_x = ((x - offset_x) - x0 * m_cell_size) * inv_cell_size;
-            auto x1 = fmin(x0 + 1, m_width-2);
-            
-            auto y0 = fmin(floorf((y-offset_y)*inv_cell_size), m_height-2);
-            auto share0_y = ((y - offset_y) - y0*m_cell_size) * inv_cell_size;
-            auto y1 = fmin(y0 + 1, m_height-2);
-
-            auto share1_x = 1.0 - share0_x;
-            auto share1_y = 1.0 - share0_y;
-
-            auto d0 = share1_x*share1_y;
-            auto d1 = share0_x*share1_y;
-            auto d2 = share0_x*share0_y;
-            auto d3 = share1_x*share0_y;
+            auto [d0, d1, d2, d3] = combineShares(share0_x, share0_y);
 
             auto bl = x0 + y0 * m_width;
             auto br = x1 + y0 * m_width;
@@ -353,7 +303,6 @@ void Fluid::solveIncompressibility(int numIters, float dt, float overRelaxation,
 
                 div /= m_cell_size;
 
-                // Optionally add drift compensation
                 if (particleRestDensity > 0.0f && compensateDrift) {
                     float compression = particle_density[center] - particleRestDensity;
                     if (compression > 0.0f) {
@@ -426,29 +375,48 @@ std::map<std::string, float> Fluid::simulate(Particles& particles, AABB sim_area
     }
     return bench;
 }
-void Fluid::draw(AABB area, sf::RenderTarget &window,
+void Fluid::draw(AABB area, Particles& particles, sf::RenderTarget &window,
           std::unordered_map<eCellTypes, Color> color_table) {
+    std::vector<float> vals(m_num_cells, 0);
+    for (auto i = 0; i < Particles::max_particle_count; i++) {
+        auto x = particles.position[i].x;
+        auto y = particles.position[i].y;
+
+        auto [share0_x, x0, x1] = getCoords(x, 1.f / m_cell_size, m_width - 2);
+        auto [share0_y, y0, y1] = getCoords(y, 1.f / m_cell_size, m_height - 2);
+
+        auto [d0, d1, d2, d3] = combineShares(share0_x, share0_y);
+
+        auto bl = x0 + y0 * m_width;
+        auto br = x1 + y0 * m_width;
+        auto tr = x1 + y1 * m_width;
+        auto tl = x0 + y1 * m_width;
+
+        vals[bl] += d0;
+        vals[br] += d1;
+        vals[tr] += d2;
+        vals[tl] += d3;
+    }
+    float max_v = *std::max_element(vals.begin(), vals.end());
+
     sf::Image img(sf::Vector2u(m_width, m_height));
     for (int i = 0; i < m_height; i++) {
         for (int j = 0; j < m_width; j++) {
             auto type = cell_type[i * m_width + j];
+            auto coord = sf::Vector2u(j, m_height - i - 1);
             if (!color_table.contains(type)) {
-                img.setPixel(sf::Vector2u(j, m_height - i - 1), sf::Color(255, 0, 255));
+                img.setPixel(coord, sf::Color(255, 0, 255));
             } else if (type == eCellTypes::Fluid) {
-                auto point_density = particle_density[i * m_width + j];
-                auto color = color_table.at(type);
-                if(point_density > particleRestDensity) {
-                    auto d = particleRestDensity / point_density  * 0.5 + 0.5f;
-                    color.r *= d;
-                    color.g *= d;
-                    color.b *= d;
-                }
-                img.setPixel(sf::Vector2u(j, m_height - i - 1), color);
+                float val = (vals[i * m_width + j] / max_v);
+                uint8_t r = 105 * (val * 0.7f + 0.3f);
+                uint8_t g = 120 * (val * 0.7f + 0.3f);
+                uint8_t b = 220 * (val * 0.7f + 0.3f);
+                img.setPixel(coord, sf::Color(r, g, b));
             }else if (smoke[i * m_width + j] != 0.f) {
                 uint8_t val = 255 *smoke[i * m_width + j]; 
-                img.setPixel(sf::Vector2u(j, m_height - i - 1), sf::Color(val, val, val));
+                img.setPixel(coord, sf::Color(val, val, val));
             }else {
-                img.setPixel(sf::Vector2u(j, m_height - i - 1), color_table.at(type));
+                img.setPixel(coord, color_table.at(type));
             }
         }
     }
