@@ -28,23 +28,90 @@ class Fluid {
     std::vector<eCellTypes> cell_type;
     std::vector<float> solid;
     std::vector<float> pressure;
-    std::vector<float> smoke;
     std::vector<vec2f> prev_velocities;
     std::vector<vec2f> velocities;
     std::vector<vec2f> velocities_diff;
     std::vector<float> particle_density;
     float particleRestDensity = 0;
     //x and y are not in grid coordinates but in global
-    float sampleField(float x, float y, float* field, float dx_offset = NAN, float dy_offset = NAN) const;
+    template<class T, class extracter>
+    float sampleField(float x, float y, T* field, extracter getF, float dx_offset = NAN, float dy_offset = NAN) const {
+        float inv_csize = 1.0 / m_cell_size;
+        float half_csize = 0.5 * m_cell_size;
 
-    void advectAny(float dt, std::vector<float>& vec, float dx_offset = NAN, float dy_offset = NAN) const;
+        x = std::clamp(x, m_cell_size, m_width * m_cell_size);
+        y = std::clamp(y, m_cell_size, m_height * m_cell_size);
+
+        float dx = (isnan(dx_offset) ? half_csize : dx_offset);
+        float dy = (isnan(dy_offset) ? half_csize : dy_offset);
+
+        // switch (field) {
+        // 	case U_FIELD: f = &hor_vel; dy = h2; break;
+        // 	case V_FIELD: f = &vert_vel; dx = h2; break;
+        // 	case S_FIELD: f = &smoke; dx = h2; dy = h2; break;
+        // 	case X_FIELD: f = &fdX; dx = h2; dy = h2; break;
+        // 	case Y_FIELD: f = &fdY; dx = h2; dy = h2; break;
+        // }
+
+        float x0 = std::fminf(std::floorf((x-dx)*inv_csize), (float)m_width-1.f);
+        float tx = (x - dx - x0*m_cell_size) * inv_csize;
+        float x1 = std::fminf(x0 + 1, m_width-1.f);
+
+        float y0 = std::fminf(std::floorf((y-dy)*inv_csize), (float)m_height-1.f);
+        float ty = (y - dy - y0*m_cell_size) * inv_csize;
+        float y1 = std::fminf(y0 + 1, m_height-1.f);
+
+        float sx = 1.0 - tx;
+        float sy = 1.0 - ty;
+
+        auto n = m_width;
+        float val = sx*sy * getF(field[int(x0 + y0*n)]) +
+            tx*sy * getF(field[int(x1 + y0*n)]) +
+            tx*ty * getF(field[int(x1 + y1*n)]) +
+            sx*ty * getF(field[int(x0 + y1*n)]);
+
+        return val;
+    }
+
+    template<class T, class extrT>
+    void advectAny(float dt, std::vector<T>& vec, extrT func, float dx = NAN, float dy = NAN) const {
+        auto temporary = vec;
+        auto half_size = 0.5 * m_cell_size;
+        auto n = m_width;
+
+        for (auto j = 0; j < m_height-1; j++) {
+            for (auto i = 0; i < m_width-1; i++) {
+                if (solid[i + j * m_width] != 0.0) {
+                    auto uu = (velocities[i + j * n].x + velocities[i+1 + j * n].x)*0.5;
+                    auto vv = (velocities[i + j * n].y + velocities[i + (j+1) * n].y)*0.5;
+                    auto x = i*m_cell_size + half_size - dt*uu;
+                    auto y = j*m_cell_size + half_size - dt*vv;
+
+                    func(temporary[i + j * n]) = sampleField<T, extrT>(x,y, vec.data(), func, dx, dy);
+                }
+            }	 
+        }
+        std::swap(vec, temporary);
+    }
 
 public:
-    float density = 1;
+    inline int width() const {
+        return m_width;
+    }
+    inline int height() const {
+        return m_height;
+    }
+    inline float cell_size() const {
+        return m_cell_size;
+    }
+    std::vector<float> smoke;
+    float fluid_density = 1;
+    float air_density = 0.001;
     float flipRatio = 0.9f;
 
     void updateParticleDensity(Particles& particles);
-    void transferVelocities(bool toGrid, float flipRatio, Particles& particles);
+    void transferVelocitiesToGrid(float flipRatio, Particles& particles);
+    void transferVelocitiesFromGrid(float flipRatio, Particles& particles);
     void solveIncompressibility(int numIters, float dt, float overRelaxation, bool compensateDrift = true);
 
     std::map<std::string, float> simulate(Particles& particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters, int numParticleIters, float overRelaxation, bool compensateDrift);
