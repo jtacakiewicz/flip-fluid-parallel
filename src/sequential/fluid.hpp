@@ -79,11 +79,11 @@ float Fluid::sampleField(float x, float y, T* field, extracter getF, float dx_of
     float dx = (isnan(dx_offset) ? half_csize : dx_offset);
     float dy = (isnan(dy_offset) ? half_csize : dy_offset);
 
-    float x0 = std::fminf(std::floorf((x-dx)*inv_csize), (float)m_width-1.f);
+    float x0 = std::fminf(std::floor((x-dx)*inv_csize), (float)m_width-1.f);
     float tx = (x - dx - x0*m_cell_size) * inv_csize;
     float x1 = std::fminf(x0 + 1, m_width-1.f);
 
-    float y0 = std::fminf(std::floorf((y-dy)*inv_csize), (float)m_height-1.f);
+    float y0 = std::fminf(std::floor((y-dy)*inv_csize), (float)m_height-1.f);
     float ty = (y - dy - y0*m_cell_size) * inv_csize;
     float y1 = std::fminf(y0 + 1, m_height-1.f);
 

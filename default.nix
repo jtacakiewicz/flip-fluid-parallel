@@ -35,6 +35,15 @@ mkShell {
         sfmlWithGcc12
         freetype
         vulkan-loader
+        pkg-config
+        xorg.libX11
+        xorg.libXrandr
+        xorg.libXinerama
+        xorg.libXcursor
+        xorg.libXi
+        cmake
+        libvorbis
+        flac
     ];
 
     SFML_PATH = "${sfmlWithGcc12}/lib/cmake";
@@ -53,6 +62,8 @@ mkShell {
         export LD_LIBRARY_PATH=${stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH
         export LD_LIBRARY_PATH=${pkgs.linuxPackages.nvidia_x11}/lib:$LD_LIBRARY_PATH
         export LD_LIBRARY_PATH="$JAVA_HOME/lib:$JAVA_HOME/lib/server:$LD_LIBRARY_PATH"
+        export LD_LIBRARY_PATH=${libvorbis}/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=${flac}/lib:$LD_LIBRARY_PATH
 
         export LIBRARY_PATH=${pkgs.cudaPackages.cuda_cudart}/lib64:${pkgs.cudaPackages.cuda_cudart}/lib:$LIBRARY_PATH
         export PATH=$SFML_PATH/bin:$PATH

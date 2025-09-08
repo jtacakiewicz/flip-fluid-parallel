@@ -15,6 +15,9 @@ else()
         LANGUAGES CXX C
     )
 endif()
+if(UNIX)
+    find_package( X11 REQUIRED )
+endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 
