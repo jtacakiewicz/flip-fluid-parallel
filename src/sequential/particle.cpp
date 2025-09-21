@@ -93,7 +93,6 @@ std::map<std::string, float> collide(Particles& particles, AABB sim_area) {
     if(col_grid.size() != max_segs_rows * max_segs_cols) {
         col_grid = std::vector<CompactVec>(max_segs_rows*max_segs_cols);
     }
-    auto max_dim = std::max(max_segs_cols, max_segs_rows);
     std::unordered_set<uint32_t> active_containers;
     Stopwatch stop;
     int counter = 0;
@@ -106,20 +105,20 @@ std::map<std::string, float> collide(Particles& particles, AABB sim_area) {
         }
         auto& comp_vec = col_grid[(row+1) * max_segs_rows + col+1];
         comp_vec.push_back(i);
-        active_containers.insert((row+1) * max_dim + col+1);
+        active_containers.insert((row+1) * max_segs_rows + col+1);
     }
     result["particles::collide::assign"] += stop.restart();
 
     for(auto i : active_containers) {
-        auto row = i / max_dim;
-        auto col = i % max_dim;
+        auto row = i / max_segs_rows;
+        auto col = i % max_segs_rows;
         compareWithNeighbours(particles, col, row, max_segs_rows, col_grid);
     }
     result["particles::collide::compare"] += stop.restart();
 
     for(auto container : active_containers) {
-        auto row = container / max_dim;
-        auto col = container % max_dim;
+        auto row = container / max_segs_rows;
+        auto col = container % max_segs_rows;
         col_grid[row * max_segs_rows + col].clear();
     }
     result["particles::collide::cleanup"] += stop.restart();

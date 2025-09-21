@@ -73,8 +73,8 @@ float Fluid::sampleField(float x, float y, T* field, extracter getF, float dx_of
     float inv_csize = 1.0 / m_cell_size;
     float half_csize = 0.5 * m_cell_size;
 
-    x = std::clamp(x, m_cell_size, m_width * m_cell_size);
-    y = std::clamp(y, m_cell_size, m_height * m_cell_size);
+    x = std::clamp(x, m_cell_size, (m_width - 1) * m_cell_size);
+    y = std::clamp(y, m_cell_size, (m_height - 1) * m_cell_size);
 
     float dx = (isnan(dx_offset) ? half_csize : dx_offset);
     float dy = (isnan(dy_offset) ? half_csize : dy_offset);
