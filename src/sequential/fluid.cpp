@@ -263,13 +263,14 @@ void Fluid::solveIncompressibility(int numIters, float dt, float overRelaxation,
     prev_velocities = velocities;
 
     auto n = m_width;
+    auto cp = fluid_density * m_cell_size / dt;
 
     for (auto iter = 0; iter < numIters; iter++) {
 
         for (auto j = 1; j < m_height-1; j++) {
             for (auto i = 1; i < m_width-1; i++) {
 
-                if (cell_type[i + j*n] == eCellTypes::Solid)
+                if (cell_type[i + j*n] != eCellTypes::Fluid)
                     continue;
 
                 auto center = i + j*n;
@@ -277,59 +278,34 @@ void Fluid::solveIncompressibility(int numIters, float dt, float overRelaxation,
                 auto right = (i + 1) + j*n;
                 auto bottom = i + (j - 1)*n;
                 auto top = i + (j + 1)*n;
-                float rho_center = (cell_type[center] == eCellTypes::Fluid) ? fluid_density : air_density;
-                float rho_left   = (cell_type[left]   == eCellTypes::Fluid) ? fluid_density : air_density;
-                float rho_right  = (cell_type[right]  == eCellTypes::Fluid) ? fluid_density : air_density;
-                float rho_bottom = (cell_type[bottom] == eCellTypes::Fluid) ? fluid_density : air_density;
-                float rho_top    = (cell_type[top]    == eCellTypes::Fluid) ? fluid_density : air_density;
 
-                // Inverse densities on faces
-                float inv_rho_x0 = (solid[left] == 1.0f)
-                    ? 0.5f * (1.0f / rho_center + 1.0f / rho_left)
-                    : 0.0f;
-                float inv_rho_x1 = (solid[right] == 1.0f)
-                    ? 0.5f * (1.0f / rho_center + 1.0f / rho_right)
-                    : 0.0f;
-
-                float inv_rho_y0 = (solid[bottom] == 1.0f)
-                    ? 0.5f * (1.0f / rho_center + 1.0f / rho_bottom)
-                    : 0.0f;
-                float inv_rho_y1 = (solid[top] == 1.0f)
-                    ? 0.5f * (1.0f / rho_center + 1.0f / rho_top)
-                    : 0.0f;
+                auto sc = solid[center];
+                auto sx0 = solid[left];
+                auto sx1 = solid[right];
+                auto sy0 = solid[bottom];
+                auto sy1 = solid[top];
+                auto s = sx0 + sx1 + sy0 + sy1;
+                if (s == 0.0)
+                    continue;
 
                 auto div = velocities[right].x - velocities[center].x + 
                     velocities[top].y - velocities[center].y;
 
-                div /= m_cell_size;
-
-                if (particleRestDensity > 0.0f && compensateDrift) {
-                    float compression = particle_density[center] - particleRestDensity;
-                    if (compression > 0.0f) {
-                        float k = 1.0f;
-                        div -= k * compression;
-                    }
+                if (particleRestDensity > 0.0 && compensateDrift) {
+                    auto k = 1.0;
+                    auto compression = particle_density[i + j*n] - particleRestDensity;
+                    if (compression > 0.0)
+                        div = div - k * compression;
                 }
 
-                // Build diagonal coefficient
-                float A_center = (inv_rho_x0 + inv_rho_x1 +
-                    inv_rho_y0 + inv_rho_y1);
-
-                if (A_center == 0.0f)
-                    continue;
-
-                float dp = -div / A_center;
-
-                // Over-relaxation
+                auto dp = -div / s;
                 dp *= overRelaxation;
+                pressure[center] += cp * dp;
 
-                pressure[center] += dp;
-
-                // Correct velocities
-                velocities[center].x -= dp * inv_rho_x0;
-                velocities[right].x += dp * inv_rho_x1;
-                velocities[center].y -= dp * inv_rho_y0;
-                velocities[top].y += dp * inv_rho_y1;
+                velocities[center].x -= sx0 * dp;
+                velocities[right].x += sx1 * dp;
+                velocities[center].y -= sy0 * dp;
+                velocities[top].y += sy1 * dp;
             }
         }
     }
