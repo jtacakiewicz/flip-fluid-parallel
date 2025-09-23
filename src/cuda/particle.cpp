@@ -9,13 +9,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unordered_set>
-void draw(Particles& particles, sf::RenderTarget& window, sf::Color color) {
+void draw(Particles &particles, sf::RenderTarget &window, sf::Color color)
+{
     sf::VertexArray quads(sf::Quads, 4 * Particles::max_particle_count);
 
-    for(int i = 0; i < Particles::max_particle_count; i += 1) { 
+    for(int i = 0; i < Particles::max_particle_count; i += 1) {
         auto pos = particles.position[i];
         pos.y = window.getSize().y - pos.y;
-        // define the position of the triangle's points
+        //  define the position of the triangle's points
         quads[i * 4 + 0].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, particles.radius);
         quads[i * 4 + 1].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(particles.radius, 0);
         quads[i * 4 + 2].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, -particles.radius);
@@ -28,4 +29,3 @@ void draw(Particles& particles, sf::RenderTarget& window, sf::Color color) {
     }
     window.draw(quads);
 }
-

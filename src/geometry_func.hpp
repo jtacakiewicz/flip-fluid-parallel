@@ -5,26 +5,21 @@
 #include "circle.hpp"
 #include "vec2.hpp"
 
-
-// returns true if r1 contains the whole of r2
-bool AABBcontainsAABB(const AABB& r1, const AABB& r2);
-// finds the closest vector to point that lies on ray
+//  returns true if r1 contains the whole of r2
+bool AABBcontainsAABB(const AABB &r1, const AABB &r2);
+//  finds the closest vector to point that lies on ray
 vec2f findClosestPointOnRay(vec2f ray_origin, vec2f ray_dir, vec2f point);
-// finds the closest vetor to point that lies on one of poly's edges
-vec2f findClosestPointOnEdge(vec2f point, const std::vector<vec2f>& poly);
-std::vector<vec2f> findContactPoints(
-        const std::vector<vec2f>& p0, const std::vector<vec2f>& p1
-);
-// returns true if p is within aabb
-bool isOverlappingPointAABB(const vec2f& p, const AABB& r);
-// returns true if p is within circle
-bool isOverlappingPointCircle(const vec2f& p, const Circle& c);
-// returns true if p is within polygon
-bool isOverlappingPointPoly(
-        const vec2f& p, const std::vector<vec2f>& poly_points
-);
-// returns true if aabb and aabb are overlapping
-bool isOverlappingAABBAABB(const AABB& r1, const AABB& r2);
+//  finds the closest vetor to point that lies on one of poly's edges
+vec2f findClosestPointOnEdge(vec2f point, const std::vector<vec2f> &poly);
+std::vector<vec2f> findContactPoints(const std::vector<vec2f> &p0, const std::vector<vec2f> &p1);
+//  returns true if p is within aabb
+bool isOverlappingPointAABB(const vec2f &p, const AABB &r);
+//  returns true if p is within circle
+bool isOverlappingPointCircle(const vec2f &p, const Circle &c);
+//  returns true if p is within polygon
+bool isOverlappingPointPoly(const vec2f &p, const std::vector<vec2f> &poly_points);
+//  returns true if aabb and aabb are overlapping
+bool isOverlappingAABBAABB(const AABB &r1, const AABB &r2);
 
 /**
  * structure containing all info returned by Ray and AABB intersection
@@ -51,9 +46,7 @@ struct IntersectionRayAABBResult {
  * [float]time_hit_near, [float]time_hit_far, [vec2f]contact_normal,
  * [vec2f]contact_point
  */
-IntersectionRayAABBResult intersectRayAABB(
-        vec2f ray_origin, vec2f ray_dir, const AABB& target
-);
+IntersectionRayAABBResult intersectRayAABB(vec2f ray_origin, vec2f ray_dir, const AABB &target);
 
 /**
  * structure containing all info returned by Ray and Ray intersection
@@ -76,9 +69,7 @@ struct IntersectionRayRayResult {
  * @return IntersectionRayRayResult that contains: (in order) [bool]detected,
  * [vec2f]contact_point, [float]t_hit_near0, [float]t_hit_near1
  */
-IntersectionRayRayResult intersectRayRay(
-        vec2f ray0_origin, vec2f ray0_dir, vec2f ray1_origin, vec2f ray1_dir
-);
+IntersectionRayRayResult intersectRayRay(vec2f ray0_origin, vec2f ray0_dir, vec2f ray1_origin, vec2f ray1_dir);
 
 struct IntersectionCircleCircleResult {
     bool detected;
@@ -91,8 +82,6 @@ struct IntersectionCircleCircleResult {
  * @return IntersectionPolygonPolygonResult that contains: (in order)
  * [bool]detected, [vec2f]contact_normal, [float]overlap
  */
-IntersectionCircleCircleResult intersectCircleCircle(
-        const Circle& c1, const Circle& c2
-);
+IntersectionCircleCircleResult intersectCircleCircle(const Circle &c1, const Circle &c2);
 
 #endif
