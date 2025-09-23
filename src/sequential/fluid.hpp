@@ -49,7 +49,9 @@ public:
     void updateParticleDensity(Particles &particles);
     void transferVelocitiesToGrid(float flipRatio, Particles &particles);
     void transferVelocitiesFromGrid(float flipRatio, Particles &particles);
-    void solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f> &vels, std::function<bool(int)> solid,
+    void transferBetweenGrids(std::vector<vec2f> &vel1, eCellTypes type1, std::vector<vec2f> &vel2, eCellTypes type2,
+                              float ratio);
+    void solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f> &vels, std::function<float(int)> solid,
                                 float density, int numIters, float overRelaxation, bool compensateDrift);
 
     std::map<std::string, float> simulate(Particles &particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters,

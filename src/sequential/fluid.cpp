@@ -275,7 +275,38 @@ void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles &particles)
         }
     }
 }
-void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f> &vels, std::function<bool(int)> solid,
+void Fluid::transferBetweenGrids(std::vector<vec2f> &vel1, eCellTypes type1, std::vector<vec2f> &vel2, eCellTypes type2,
+                                 float ratio)
+{
+    auto n = m_width;
+    auto oneOfTypes = [&](eCellTypes type) -> bool { return type == type1 || type == type2; };
+    for(auto j = 0; j < m_height - 1; j++) {
+        for(auto i = 0; i < m_width - 1; i++) {
+            int cur = i + j * n;
+            if(!oneOfTypes(cell_type[cur])) {
+                continue;
+            }
+
+            for(int component = 0; component < 2; component++) {
+                int other = (i + (1 - component)) + (j + component) * n;
+                if(!oneOfTypes(cell_type[other])) {
+                    continue;
+                }
+                if(cell_type[cur] == cell_type[other]) {
+                    continue;
+                }
+                if(component == 0) {
+                    auto combined = (vel2[cur].x - vel1[cur].x) * ratio;
+                    vel1[cur].x += combined;
+                } else {
+                    auto combined = (vel2[cur].y - vel1[cur].y) * ratio;
+                    vel1[cur].y += combined;
+                }
+            }
+        }
+    }
+}
+void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f> &vels, std::function<float(int)> solid,
                                    float density, int numIters, float overRelaxation, bool compensateDrift)
 {
     auto n = m_width;
@@ -296,10 +327,10 @@ void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vect
                 auto bottom = i + (j - 1) * n;
                 auto top = i + (j + 1) * n;
 
-                auto sx0 = !solid(left);
-                auto sx1 = !solid(right);
-                auto sy0 = !solid(bottom);
-                auto sy1 = !solid(top);
+                auto sx0 = 1.f - solid(left);
+                auto sx1 = 1.f - solid(right);
+                auto sy0 = 1.f - solid(bottom);
+                auto sy1 = 1.f - solid(top);
                 auto s = sx0 + sx1 + sy0 + sy1;
                 if(s == 0.0) {
                     continue;
@@ -366,15 +397,25 @@ std::map<std::string, float> Fluid::simulate(Particles &particles, AABB sim_area
             numPressureIters, overRelaxation, compensateDrift);
         advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.x; }, 0.f, m_cell_size / 2.f);
         advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.y; }, m_cell_size / 2.f, 0.f);
-        float a = 0.03;
-        for(int i = 0; i < m_num_cells; i++) {
-            air_velocities[i] = (velocities[i] * a) + (air_velocities[i] * (1.f - a));
-        }
+
+        float transfer_coef = (fluid_density + air_density) / fluid_density;
+        transferBetweenGrids(air_velocities, eCellTypes::Air, velocities, eCellTypes::Fluid, transfer_coef);
         solveIncompressibility(
             sdt, eCellTypes::Air, air_velocities,
-            [&](int idx) { return this->cell_type[idx] == eCellTypes::Solid || this->cell_type[idx] == eCellTypes::Fluid; },
+            [&](int idx) {
+                if(this->cell_type[idx] == eCellTypes::Solid) {
+                    return 1.f;
+                }
+                if(this->cell_type[idx] == eCellTypes::Fluid) {
+                    float perc = particle_density[idx] / particleRestDensity;
+                    return std::clamp<float>(perc, 0.f, 1.f);
+                }
+                return 0.f;
+            },
             air_density, numPressureIters, overRelaxation, false);
         advectAny(sdt, smoke, air_velocities, [&](float &f) -> float & { return f; }, m_cell_size / 2.f, m_cell_size / 2.f);
+
+        transferBetweenGrids(velocities, eCellTypes::Fluid, air_velocities, eCellTypes::Air, 1.f - transfer_coef);
         bench["fluid::incompressibility"] += local_stop.restart();
         bench["fluid::advectSmoke"] += local_stop.restart();
         transferVelocitiesFromGrid(flipRatio, particles);
