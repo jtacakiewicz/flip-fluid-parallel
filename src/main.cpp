@@ -10,13 +10,13 @@
 #include "geometry_func.hpp"
 #include "time.hpp"
 
-
 #include <SFML/Window/Mouse.hpp>
 #include <iostream>
 #include <stdexcept>
 using namespace sf;
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
     float w = 1280;
     float h = 720;
     int numParticleIters = 16;
@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
     float overrelaxation = 1.9f;
     float cell_size_scale = 3.f;
     float raporting_interval = 1.f;
+    float spacing = 1.f;
     bool pushOut = true;
     Particles particles;
     std::string help_msg = R"""(
@@ -39,6 +40,7 @@ Options:
         -x [overrelaxation coef]
         -d [1/0 should drift be corrected]
         -t [raporting time in seconds]
+        -s [spacing between particles (scale of radius)]
 When using application:
         Click and hold mouse to interact,
         Press G to toggle grid view,
@@ -47,55 +49,57 @@ When using application:
     try {
         for(int i = 1; i < argc; i += 2) {
             std::string flag = argv[i];
-            std::string arg = argv[i+1];
+            std::string arg = argv[i + 1];
             if(flag == "-w") {
                 w = stoi(arg);
-            }else if(flag == "-h") {
+            } else if(flag == "-h") {
                 h = stoi(arg);
-            }else if(flag == "-c") {
+            } else if(flag == "-c") {
                 cell_size_scale = stof(arg);
-            }else if(flag == "-r") {
+            } else if(flag == "-r") {
                 particles.radius = stof(arg);
-            }else if(flag == "-n") {
+            } else if(flag == "-n") {
                 particles.max_particle_count = stoi(arg);
-            }else if(flag == "-i") {
+            } else if(flag == "-i") {
                 numParticleIters = stoi(arg);
-            }else if(flag == "-f") {
+            } else if(flag == "-f") {
                 numFluidIters = stoi(arg);
-            }else if(flag == "-x") {
+            } else if(flag == "-x") {
                 overrelaxation = stof(arg);
-            }else if(flag == "-d") {
+            } else if(flag == "-d") {
                 pushOut = stoi(arg);
-            }else if(flag == "-t") {
+            } else if(flag == "-t") {
                 raporting_interval = stof(arg);
-            }else if(flag == "--help") {
+            } else if(flag == "-s") {
+                spacing = stof(arg);
+            } else if(flag == "--help") {
                 printf("%s", help_msg.c_str());
                 return 0;
-            }else {
+            } else {
                 throw std::invalid_argument("unrecognized flag");
             }
         }
-    }catch(...) {
+    } catch(...) {
         printf("incorrect arguments were given!");
         printf("%s", help_msg.c_str());
         return 0;
     }
     auto fluid_cell_size = particles.diameter * cell_size_scale;
-    AABB screen_area = AABB::CreateMinSize({0, 0}, {w, h});
+    AABB screen_area = AABB::CreateMinSize({ 0, 0 }, { w, h });
     RenderWindow window(VideoMode(Vector2u(w, h)), "demo");
     auto area = screen_area;
     area.setSize(area.size() * 0.75f);
-    init(particles, area, 1.5f);
+    init(particles, area, spacing);
 
     auto fluid_size = screen_area.size() / fluid_cell_size;
     Fluid fluid(fluid_cell_size, fluid_size.x + 1, fluid_size.y + 1);
 
-
     std::cout << "{\n";
     auto dispNameValue = [&](std::string name, auto value, bool isLast = false) {
         std::cout << "\t\"" << name << "\" : \"" << value << "\"";
-        if(!isLast)
+        if(!isLast) {
             std::cout << ",";
+        }
         std::cout << "\n";
     };
     dispNameValue("particle radius", particles.radius);
@@ -110,16 +114,16 @@ When using application:
     bool shouldReport = true;
     Stopwatch report_clock;
     report_clock.restart();
-    while (window.isOpen()) {
-        while (const std::optional event = window.pollEvent())
-        {
-            if (event->is<sf::Event::Closed>())
+    while(window.isOpen()) {
+        while(const std::optional event = window.pollEvent()) {
+            if(event->is<sf::Event::Closed>()) {
                 window.close();
+            }
         }
 
         static vec2f last_mouse_pos;
         auto posi = sf::Mouse::getPosition(window);
-        vec2f mouse_pos  = {(float)posi.x, (float)posi.y};
+        vec2f mouse_pos = { (float)posi.x, (float)posi.y };
         mouse_pos.y = window.getSize().y - mouse_pos.y;
         vec2f mouse_dir = mouse_pos - last_mouse_pos;
         const float brush_size = 50.f;
@@ -136,7 +140,8 @@ When using application:
         total_time += deltaTime;
 
         static std::vector<std::map<std::string, float>> times;
-        auto cur_times = fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters, overrelaxation, pushOut);
+        auto cur_times = fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters,
+                                        overrelaxation, pushOut);
         times.push_back(cur_times);
         if(report_clock.getElapsedTime() > raporting_interval && shouldReport) {
             static bool displayed = false;
@@ -147,9 +152,9 @@ When using application:
             displayed = true;
             std::cout << "{\n";
             report_clock.restart();
-            auto displayAvg = [&](std::string name, auto& vec_table) {
+            auto displayAvg = [&](std::string name, auto &vec_table) {
                 float sum = 0.f;
-                for(auto& tab : vec_table) {
+                for(auto &tab : vec_table) {
                     sum += tab[name];
                 }
                 auto avg = sum / vec_table.size();
@@ -161,12 +166,13 @@ When using application:
                 std::cout << ",\n";
             }
             float sum = 0.f;
-            for(const auto& v : times) {
-                for(auto [name, val] : v)
+            for(const auto &v : times) {
+                for(auto [name, val] : v) {
                     sum += val;
+                }
             }
             float avg = sum / times.size();
-            std::cout << "\t\t\t\"FPS\" : \"" << 1.f/avg << "\"";
+            std::cout << "\t\t\t\"FPS\" : \"" << 1.f / avg << "\"";
             std::cout << ",\n";
 
             std::cout << "\t\t}\n";
@@ -175,19 +181,19 @@ When using application:
 
         window.clear();
         static bool drawParticles = false;
-        static bool drawGrid= true;
+        static bool drawGrid = true;
         static bool pressed = 0;
         if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::P)) {
             if(!pressed) {
-                drawParticles = !drawParticles ;
+                drawParticles = !drawParticles;
             }
             pressed = true;
-        }else if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::G)) {
+        } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::G)) {
             if(!pressed) {
                 drawGrid = !drawGrid;
             }
             pressed = true;
-        }else {
+        } else {
             pressed = false;
         }
         if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S)) {
@@ -196,13 +202,15 @@ When using application:
             fluid.smoke[y * fluid.width() + x] = 1.f;
         }
 
-        if(drawGrid)
+        if(drawGrid) {
             fluid.draw(screen_area, particles, window);
-        if(drawParticles)
+        }
+        if(drawParticles) {
             draw(particles, window, Color(70, 70, 250));
+        }
         sf::CircleShape cs(brush_size);
-        cs.setOrigin({brush_size, brush_size});
-        cs.setPosition({mouse_pos.x, screen_area.size().y - mouse_pos.y});
+        cs.setOrigin({ brush_size, brush_size });
+        cs.setPosition({ mouse_pos.x, screen_area.size().y - mouse_pos.y });
         cs.setFillColor(Color(0, 0, 0, 0));
         cs.setOutlineColor(Color(255, 255, 255));
         cs.setOutlineThickness(2.f);
