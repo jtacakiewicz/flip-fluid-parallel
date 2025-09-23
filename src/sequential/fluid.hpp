@@ -7,6 +7,7 @@
 #include "particle.hpp"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <unordered_map>
@@ -16,10 +17,6 @@ enum class eCellTypes {
     Solid
 };
 class Fluid {
-    enum class eFields {
-        U,
-        V
-    };
     int m_width;
     int m_height;
     int m_num_cells;
@@ -30,6 +27,10 @@ class Fluid {
     std::vector<float> pressure;
     std::vector<vec2f> prev_velocities;
     std::vector<vec2f> velocities;
+
+    std::vector<vec2f> prev_air_velocities;
+    std::vector<vec2f> air_velocities;
+
     std::vector<vec2f> velocities_diff;
     std::vector<float> particle_density;
     float particleRestDensity = 0;
@@ -38,7 +39,7 @@ class Fluid {
     float sampleField(float x, float y, T* field, extracter getF, float dx_offset = NAN, float dy_offset = NAN) const;
 
     template<class T, class extrT>
-    void advectAny(float dt, std::vector<T>& vec, extrT func, float dx = NAN, float dy = NAN) const;
+    void advectAny(float dt, std::vector<T>& vec, std::vector<vec2f>& vels, extrT func, float dx, float dy) const;
 
 public:
     inline int width() const {
@@ -58,7 +59,7 @@ public:
     void updateParticleDensity(Particles& particles);
     void transferVelocitiesToGrid(float flipRatio, Particles& particles);
     void transferVelocitiesFromGrid(float flipRatio, Particles& particles);
-    void solveIncompressibility(int numIters, float dt, float overRelaxation, bool compensateDrift = true);
+    void solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f>& vels, std::function<bool(int)> solid, float density, int numIters, float overRelaxation, bool compensateDrift);
 
     std::map<std::string, float> simulate(Particles& particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters, int numParticleIters, float overRelaxation, bool compensateDrift);
     void draw(AABB area, Particles& particles, sf::RenderTarget &window,
@@ -100,7 +101,7 @@ float Fluid::sampleField(float x, float y, T* field, extracter getF, float dx_of
 }
 
 template<class T, class extrT>
-void Fluid::advectAny(float dt, std::vector<T>& vec, extrT func, float dx, float dy) const {
+void Fluid::advectAny(float dt, std::vector<T>& vec, std::vector<vec2f>& vels, extrT func, float dx, float dy) const {
     auto temporary = vec;
     auto half_size = 0.5 * m_cell_size;
     auto n = m_width;
@@ -108,8 +109,8 @@ void Fluid::advectAny(float dt, std::vector<T>& vec, extrT func, float dx, float
     for (auto j = 0; j < m_height-1; j++) {
         for (auto i = 0; i < m_width-1; i++) {
             if (solid[i + j * m_width] != 0.0) {
-                auto uu = (velocities[i + j * n].x + velocities[i+1 + j * n].x)*0.5;
-                auto vv = (velocities[i + j * n].y + velocities[i + (j+1) * n].y)*0.5;
+                auto uu = (vels[i + j * n].x + vels[i+1 + j * n].x)*0.5;
+                auto vv = (vels[i + j * n].y + vels[i + (j+1) * n].y)*0.5;
                 auto x = i*m_cell_size + half_size - dt*uu;
                 auto y = j*m_cell_size + half_size - dt*vv;
 

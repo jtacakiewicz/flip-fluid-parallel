@@ -2,6 +2,7 @@
 #include "cuda/particle.hpp"
 #include "time.hpp"
 #include <algorithm>
+#include <functional>
 #include <vector>
 Fluid::Fluid(float cell_size, int width, int height) : m_cell_size(cell_size), m_width(width), m_height(height), m_num_cells(width * height){
     cell_color = std::vector<Color>(m_num_cells);
@@ -12,6 +13,7 @@ Fluid::Fluid(float cell_size, int width, int height) : m_cell_size(cell_size), m
     smoke = std::vector<float>(m_num_cells, 0.f);
 
     velocities = std::vector<vec2f>(m_num_cells, vec2f(0, 0));
+    air_velocities = std::vector<vec2f>(m_num_cells, vec2f(0, 0));
     prev_velocities = std::vector<vec2f>(m_num_cells, vec2f(0, 0));
     velocities_diff = std::vector<vec2f>(m_num_cells, vec2f(0, 0));
 
@@ -244,19 +246,16 @@ void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles& particles) {
         }
     }
 }
-void Fluid::solveIncompressibility(int numIters, float dt, float overRelaxation, bool compensateDrift) {
-    std::fill(pressure.begin(), pressure.end(), 0.f);
-    prev_velocities = velocities;
-
+void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f>& vels, std::function<bool(int)> solid, float density, int numIters, float overRelaxation, bool compensateDrift) {
     auto n = m_width;
-    auto cp = fluid_density * m_cell_size / dt;
+    auto cp = density * m_cell_size / dt;
 
     for (auto iter = 0; iter < numIters; iter++) {
 
         for (auto j = 0; j < m_height; j++) {
             for (auto i = 0; i < m_width; i++) {
 
-                if (cell_type[i + j*n] != eCellTypes::Fluid)
+                if (cell_type[i + j*n] != expected_type)
                     continue;
 
                 auto center = i + j*n;
@@ -265,33 +264,31 @@ void Fluid::solveIncompressibility(int numIters, float dt, float overRelaxation,
                 auto bottom = i + (j - 1)*n;
                 auto top = i + (j + 1)*n;
 
-                auto sc = solid[center];
-                auto sx0 = solid[left];
-                auto sx1 = solid[right];
-                auto sy0 = solid[bottom];
-                auto sy1 = solid[top];
+                auto sx0 = !solid(left);
+                auto sx1 = !solid(right);
+                auto sy0 = !solid(bottom);
+                auto sy1 = !solid(top);
                 auto s = sx0 + sx1 + sy0 + sy1;
                 if (s == 0.0)
                     continue;
 
-                auto div = velocities[right].x - velocities[center].x + 
-                    velocities[top].y - velocities[center].y;
+                auto div = vels[right].x - vels[center].x + 
+                    vels[top].y - vels[center].y;
 
                 if (particleRestDensity > 0.0 && compensateDrift) {
-                    auto k = 0.7;
+                    auto k = 0.6;
                     auto compression = particle_density[i + j*n] - particleRestDensity;
-                    if (compression > 0.0)
+                    if (compression < 0.0)
                         div = div - k * compression;
                 }
 
                 auto dp = -div / s;
                 dp *= overRelaxation;
-                pressure[center] += cp * dp;
 
-                velocities[center].x -= sx0 * dp;
-                velocities[right].x += sx1 * dp;
-                velocities[center].y -= sy0 * dp;
-                velocities[top].y += sy1 * dp;
+                vels[center].x -= sx0 * dp;
+                vels[right].x += sx1 * dp;
+                vels[center].y -= sy0 * dp;
+                vels[top].y += sy1 * dp;
             }
         }
     }
@@ -321,15 +318,21 @@ std::map<std::string, float> Fluid::simulate(Particles& particles, AABB sim_area
                 bench["particles::collide"] += local_stop.restart();
             }
         }
-        advectAny(sdt, velocities, [&](vec2f& v)->float&{return v.x;}, 0.f, m_cell_size/2.f);
-        advectAny(sdt, velocities, [&](vec2f& v)->float&{return v.y;}, m_cell_size/2.f, 0.f);
-        advectAny(sdt, smoke, [&](float& f)->float&{return f;}, m_cell_size/2.f, m_cell_size/2.f);
         bench["fluid::advectSmoke"] += local_stop.restart();
         transferVelocitiesToGrid(1.f, particles);
         bench["fluid::transfer1"] += local_stop.restart();
         updateParticleDensity(particles);
         bench["fluid::density"] += local_stop.restart();
-        solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
+        prev_velocities = velocities;
+        solveIncompressibility(sdt, eCellTypes::Fluid, velocities, [&](int idx){ return this->cell_type[idx] == eCellTypes::Solid; }, fluid_density, numPressureIters, overRelaxation, compensateDrift);
+        advectAny(sdt, air_velocities, air_velocities, [&](vec2f& v)->float&{return v.x;}, 0.f, m_cell_size/2.f);
+        advectAny(sdt, air_velocities, air_velocities, [&](vec2f& v)->float&{return v.y;}, m_cell_size/2.f, 0.f);
+        float a = 0.03;
+        for(int i = 0; i < m_num_cells; i++) {
+            air_velocities[i] = (velocities[i] * a) + (air_velocities[i] * (1.f - a));
+        }
+        solveIncompressibility(sdt, eCellTypes::Air, air_velocities, [&](int idx){ return this->cell_type[idx] == eCellTypes::Solid || this->cell_type[idx] == eCellTypes::Fluid;}, air_density, numPressureIters, overRelaxation, false);
+        advectAny(sdt, smoke, air_velocities, [&](float& f)->float&{return f;}, m_cell_size/2.f, m_cell_size/2.f);
         bench["fluid::incompressibility"] += local_stop.restart();
         bench["fluid::advectSmoke"] += local_stop.restart();
         transferVelocitiesFromGrid(flipRatio, particles);
