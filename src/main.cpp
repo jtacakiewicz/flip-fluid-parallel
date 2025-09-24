@@ -120,6 +120,7 @@ When using application:
                 window.close();
             }
         }
+        float deltaTime = deltaClock.restart().asSeconds();
 
         static vec2f last_mouse_pos;
         auto posi = sf::Mouse::getPosition(window);
@@ -127,16 +128,21 @@ When using application:
         mouse_pos.y = window.getSize().y - mouse_pos.y;
         vec2f mouse_dir = mouse_pos - last_mouse_pos;
         const float brush_size = 50.f;
-        if(qlen(mouse_dir) != 0 && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
+        if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
             for(int i = 0; i < Particles::max_particle_count; i++) {
-                auto scalar = length(mouse_dir) * 100.f;
-                if(length(mouse_pos - particles.position[i]) < brush_size && scalar > 0.f) {
-                    particles.velocity[i] = normal(mouse_dir) * std::clamp(scalar, 0.f, 1000.f);
+                auto scalar = length(mouse_dir) / deltaTime;
+                vec2f norm;
+                if(qlen(mouse_dir) == 0.f) {
+                    norm = { 0, 0 };
+                } else {
+                    norm = normal(mouse_dir);
+                }
+                if(length(mouse_pos - particles.position[i]) < brush_size) {
+                    particles.velocity[i] = norm * std::clamp(scalar, 0.f, 1000.f);
                 }
             }
         }
 
-        float deltaTime = deltaClock.restart().asSeconds();
         total_time += deltaTime;
 
         static std::vector<std::map<std::string, float>> times;
