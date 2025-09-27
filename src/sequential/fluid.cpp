@@ -217,8 +217,8 @@ void Fluid::updateParticleDensity(Particles &particles)
 }
 void Fluid::transferVelocitiesToGrid(float flipRatio, Particles &particles)
 {
-    for(auto i = 0; i < m_num_cells; i++) {                                     
-        cell_type[i] = (solid[i] == 1.0 ? eCellTypes::Solid : eCellTypes::Air); 
+    for(auto i = 0; i < m_num_cells; i++) {
+        cell_type[i] = (solid[i] == 1.0 ? eCellTypes::Solid : eCellTypes::Air);
     }
     EMP_BENCHMARK_FUNC();
     auto inv_cell_size = 1.f / m_cell_size;
@@ -460,6 +460,7 @@ void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vect
 
                 auto dp = -div / s;
                 dp *= overRelaxation;
+                pressure[center] += dp * density;
 
                 vels[center].x -= sx0 * dp;
                 vels[right].x += sx1 * dp;
@@ -472,6 +473,7 @@ void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vect
 void Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters, int numParticleIters,
                      float overRelaxation, bool compensateDrift)
 {
+    std::fill(pressure.begin(), pressure.end(), 0.f);
     auto numSubSteps = 1;
     auto sdt = dt / numSubSteps;
 
@@ -504,8 +506,8 @@ void Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravit
         advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.x; }, 0.f, m_cell_size / 2.f);
         advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.y; }, m_cell_size / 2.f, 0.f);
 
-        float transfer_coef = (fluid_density + air_density) / fluid_density;
-        transferBetweenGrids(air_velocities, eCellTypes::Air, velocities, eCellTypes::Fluid, transfer_coef);
+        float transfer_coef = air_density / (fluid_density + air_density);
+        transferBetweenGrids(air_velocities, eCellTypes::Air, velocities, eCellTypes::Fluid, 1.f - transfer_coef);
         solveIncompressibility(
             sdt, eCellTypes::Air, air_velocities,
             [&](int idx) {
@@ -520,11 +522,63 @@ void Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravit
             },
             air_density, numPressureIters, overRelaxation, false);
         advectAny(sdt, smoke, air_velocities, [&](float &f) -> float & { return f; }, m_cell_size / 2.f, m_cell_size / 2.f);
-        transferBetweenGrids(velocities, eCellTypes::Fluid, air_velocities, eCellTypes::Air, 1.f - transfer_coef);
+        transferBetweenGrids(velocities, eCellTypes::Fluid, air_velocities, eCellTypes::Air, transfer_coef);
         transferVelocitiesFromGrid(flipRatio, particles);
     }
 }
-void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std::unordered_map<eCellTypes, Color> color_table)
+sf::Color hsvToRgb(double h, double s, double v)
+{
+    double c = v * s;
+    double hPrime = h / 60.0;
+    double x = c * (1.0 - std::fabs(std::fmod(hPrime, 2.0) - 1.0));
+    double m = v - c;
+
+    double r1, g1, b1;
+    if(hPrime >= 0 && hPrime < 1) {
+        r1 = c;
+        g1 = x;
+        b1 = 0;
+    } else if(hPrime < 2) {
+        r1 = x;
+        g1 = c;
+        b1 = 0;
+    } else if(hPrime < 3) {
+        r1 = 0;
+        g1 = c;
+        b1 = x;
+    } else if(hPrime < 4) {
+        r1 = 0;
+        g1 = x;
+        b1 = c;
+    } else if(hPrime < 5) {
+        r1 = x;
+        g1 = 0;
+        b1 = c;
+    } else {
+        r1 = c;
+        g1 = 0;
+        b1 = x;
+    }
+
+    unsigned char r = static_cast<unsigned char>(std::round((r1 + m) * 255.0));
+    unsigned char g = static_cast<unsigned char>(std::round((g1 + m) * 255.0));
+    unsigned char b = static_cast<unsigned char>(std::round((b1 + m) * 255.0));
+
+    return sf::Color(r, g, b);
+}
+
+sf::Color mapValue(double val)
+{
+    val = std::clamp(val, 0.0, 1.0);
+    double hue = (1.0 - val) * 240.0;
+    double sat = 1.0;
+    double bright = 1.0;
+
+    return hsvToRgb(hue, sat, bright);
+}
+
+void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std::unordered_map<eCellTypes, Color> color_table,
+                 bool showPressure)
 {
     EMP_BENCHMARK_FUNC()
     std::vector<float> vals(m_num_cells, 0);
@@ -551,10 +605,21 @@ void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std:
     float max_v = *std::max_element(vals.begin(), vals.end());
 
     sf::Image img(sf::Vector2u(m_width, m_height));
+    static float max_pressure = *std::max_element(pressure.begin(), pressure.end());
+    auto cur_max_pressure = *std::max_element(pressure.begin(), pressure.end());
+    max_pressure = cur_max_pressure * 0.05f + max_pressure * 0.95f;
+
     for(int i = 0; i < m_height; i++) {
         for(int j = 0; j < m_width; j++) {
             auto type = cell_type[i * m_width + j];
             auto coord = sf::Vector2u(j, m_height - i - 1);
+            if(showPressure) {
+                auto min_pressure = 0.f;
+                auto range = max_pressure - min_pressure;
+                auto mapped = (pressure[i * m_width + j] - min_pressure) / range;
+                img.setPixel(coord, mapValue(mapped));
+                continue;
+            }
             if(!color_table.contains(type)) {
                 img.setPixel(coord, sf::Color(255, 0, 255));
             } else if(type == eCellTypes::Fluid) {

@@ -69,8 +69,8 @@ public:
               std::unordered_map<eCellTypes, Color> color_table = {
                   { eCellTypes::Air,   Color(0,   0,   50)  },
                   { eCellTypes::Solid, Color(100, 100, 100) },
-                  { eCellTypes::Fluid, Color(70,  100, 220) }
-    });
+                  { eCellTypes::Fluid, Color(70,  100, 220) },
+    }, bool showPressure = false);
     Fluid(float cell_size, int width, int height);
 };
 template <class T, class extracter>
