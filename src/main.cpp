@@ -5,6 +5,8 @@
 #include <SFML/Audio.hpp>
 #include <SFML/System/Clock.hpp>
 #include <SFML/Window/Event.hpp>
+#include <SFML/Window/Keyboard.hpp>
+#include <any>
 #include <cmath>
 #include <iomanip>
 #include <numeric>
@@ -49,14 +51,11 @@ Options:
 When using application:
         Click and hold mouse to interact,
         Press 1 for grabbing, 2 for smoke generation and 3 for solid block drawing.
-        Press G to toggle grid view,
-        Press P to toggle particle view
+        Press G to toggle grid view.
+        Press P to toggle particle view.
+        Press Q to toggle pressure view.
 )""";
-    enum MOUSE_MODE {
-        HOLD,
-        SMOKE_GEN,
-        SOLID_GEN
-    };
+    enum MOUSE_MODE { HOLD, SMOKE_GEN, SOLID_GEN };
     MOUSE_MODE cur_mouse_mode = HOLD;
     try {
         for(int i = 1; i < argc; i += 2) {
@@ -106,12 +105,20 @@ When using application:
     auto fluid_size = screen_area.size() / fluid_cell_size;
     Fluid fluid(fluid_cell_size, fluid_size.x, fluid_size.y);
 
-    auto dispNameValue = [&](std::string name, auto value, bool isLast = false) { std::cout << name << ": " << value << "\n"; };
-    dispNameValue("particle radius", particles.radius);
-    dispNameValue("particle count", Particles::max_particle_count);
-    dispNameValue("num of particle iters", numParticleIters);
-    dispNameValue("num of fluid iters", numFluidIters);
-    dispNameValue("overrelaxation", overrelaxation);
+    std::cout << "particle radius: " << particles.radius << "\n";
+    std::cout << "particle count: " << Particles::max_particle_count << "\n";
+    std::cout << "num of particle iters: " << numParticleIters << "\n";
+    std::cout << "num of fluid iters: " << numFluidIters << "\n";
+    std::cout << "overrelaxation: " << overrelaxation << "\n";
+    bool drawParticles = false;
+    bool drawGrid = true;
+    bool drawPressure = false;
+    bool shortcut_pressed = 0;
+    std::map<sf::Keyboard::Key, bool *> display_shortcuts = {
+        { sf::Keyboard::Key::P, &drawParticles },
+        { sf::Keyboard::Key::G, &drawGrid      },
+        { sf::Keyboard::Key::X, &drawPressure  },
+    };
 
     float total_time = 0;
     Clock deltaClock;
@@ -127,20 +134,20 @@ When using application:
             if(event->is<sf::Event::Closed>()) {
                 window.close();
             }
-            if (event->is<sf::Event::MouseWheelScrolled>())
-            {
+            if(event->is<sf::Event::MouseWheelScrolled>()) {
                 auto wheel = event->getIf<sf::Event::MouseWheelScrolled>();
-                const float scroll_speed = 10.f; // X cells per second
-                if(wheel->delta ==0.f) {
-                }else if(wheel->delta > 0.f) {
+                const float scroll_speed = 10.f;  //  X cells per second
+                if(wheel->delta == 0.f) {
+                } else if(wheel->delta > 0.f) {
                     brush_size += fluid.cell_size() * deltaTime * scroll_speed;
-                }else {
+                } else {
                     brush_size -= fluid.cell_size() * deltaTime * scroll_speed;
                 }
                 brush_size = std::max(brush_size, 1.f);
             }
         }
 
+        //  mouse controls
         static vec2f last_mouse_pos;
         auto posi = sf::Mouse::getPosition(window);
         vec2f mouse_pos = { (float)posi.x, (float)posi.y };
@@ -149,72 +156,52 @@ When using application:
         if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
             switch(cur_mouse_mode) {
                 case MOUSE_MODE::HOLD:
-                for(int i = 0; i < Particles::max_particle_count; i++) {
-                    auto scalar = length(mouse_dir) / deltaTime;
-                    vec2f norm;
-                    if(qlen(mouse_dir) == 0.f) {
-                        norm = { 0, 0 };
-                    } else {
-                        norm = normal(mouse_dir);
+                    for(int i = 0; i < Particles::max_particle_count; i++) {
+                        auto scalar = length(mouse_dir) / deltaTime;
+                        vec2f norm;
+                        if(qlen(mouse_dir) == 0.f) {
+                            norm = { 0, 0 };
+                        } else {
+                            norm = normal(mouse_dir);
+                        }
+                        if(length(mouse_pos - particles.position[i]) < brush_size) {
+                            particles.velocity[i] = norm * std::clamp(scalar, 0.f, 1000.f);
+                        }
                     }
-                    if(length(mouse_pos - particles.position[i]) < brush_size) {
-                        particles.velocity[i] = norm * std::clamp(scalar, 0.f, 1000.f);
-                    }
-                }
-                break;
+                    break;
                 case MOUSE_MODE::SOLID_GEN:
-                case MOUSE_MODE::SMOKE_GEN:
-                {
+                case MOUSE_MODE::SMOKE_GEN: {
                     int x = mouse_pos.x / fluid.cell_size();
                     int y = mouse_pos.y / fluid.cell_size();
-                    float hsize = brush_size / 2.f / fluid.cell_size();
+                    float hsize = brush_size / 2.f / fluid.cell_size() + 1;
                     for(int j = y - hsize; j < y + hsize; j++) {
                         for(int i = x - hsize; i < x + hsize; i++) {
-                            if(length(mouse_pos - vec2f(i + 0.5f, j + 0.5f) * fluid.cell_size()) > brush_size ) {
+                            if(length(mouse_pos - vec2f(i + 0.5f, j + 0.5f) * fluid.cell_size()) > brush_size) {
                                 continue;
                             }
                             if(cur_mouse_mode == MOUSE_MODE::SOLID_GEN) {
                                 fluid.solid[j * fluid.width() + i] = 1.f;
-                            } else if (cur_mouse_mode == MOUSE_MODE::SMOKE_GEN) {
+                            } else if(cur_mouse_mode == MOUSE_MODE::SMOKE_GEN) {
                                 fluid.smoke[j * fluid.width() + i] = 1.f;
                             }
                         }
                     }
+                } break;
+            }
+        }
+        //  other controls
+        bool any_shortcut_pressed = false;
+        for(auto m : display_shortcuts) {
+            if(sf::Keyboard::isKeyPressed(m.first)) {
+                if(!shortcut_pressed) {
+                    *m.second = !*m.second;
                 }
-                break;
+                any_shortcut_pressed = true;
+                shortcut_pressed = true;
             }
         }
-
-        total_time += deltaTime;
-
-        fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters, overrelaxation,
-                       pushOut);
-        sample_count += 1;
-        if(report_clock.getElapsedTime() > raporting_interval && shouldReport) {
-            auto total_time = BenchmarkRegistry().get().getMeasurement("ROOT");
-            std::cout << "FPS:\t" << std::setprecision(2) << 1.0 / (total_time / sample_count) << '\n';
-            BenchmarkRegistry().get().print(sample_count);
-            BenchmarkRegistry().get().reset();
-            report_clock.restart();
-            sample_count = 0;
-        }
-
-        window.clear();
-        static bool drawParticles = false;
-        static bool drawGrid = true;
-        static bool pressed = 0;
-        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::P)) {
-            if(!pressed) {
-                drawParticles = !drawParticles;
-            }
-            pressed = true;
-        } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::G)) {
-            if(!pressed) {
-                drawGrid = !drawGrid;
-            }
-            pressed = true;
-        } else {
-            pressed = false;
+        if(!any_shortcut_pressed) {
+            shortcut_pressed = false;
         }
         if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Num1)) {
             cur_mouse_mode = MOUSE_MODE::HOLD;
@@ -226,8 +213,31 @@ When using application:
             cur_mouse_mode = MOUSE_MODE::SOLID_GEN;
         }
 
+        //  simulation
+        total_time += deltaTime;
+
+        fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters, overrelaxation,
+                       pushOut);
+        sample_count += 1;
+        if(report_clock.getElapsedTime() > raporting_interval && shouldReport && EMP_DEBUG) {
+            auto total_time = BenchmarkRegistry().get().getMeasurement("ROOT");
+            std::cout << "FPS:\t" << std::setprecision(2) << 1.0 / (total_time / sample_count) << '\n';
+            BenchmarkRegistry().get().print(sample_count);
+            BenchmarkRegistry().get().reset();
+            report_clock.restart();
+            sample_count = 0;
+        }
+
+        window.clear();
+
+        //  drawing
         if(drawGrid) {
-            fluid.draw(screen_area, particles, window);
+            std::unordered_map<eCellTypes, Color> color_table = {
+                { eCellTypes::Air,   Color(0,   0,   50)  },
+                { eCellTypes::Solid, Color(100, 100, 100) },
+                { eCellTypes::Fluid, Color(70,  100, 220) },
+            };
+            fluid.draw(screen_area, particles, window, color_table, drawPressure);
         }
         if(drawParticles) {
             draw(particles, window, Color(70, 70, 250));
