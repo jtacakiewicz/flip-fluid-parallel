@@ -564,7 +564,9 @@ void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std:
                 uint8_t g = 120 * (val * 0.7f + 0.3f);
                 uint8_t b = 220 * (val * 0.7f + 0.3f);
                 img.setPixel(coord, sf::Color(r, g, b));
-            } else if(smoke[i * m_width + j] != 0.f) {
+            } else if(type == eCellTypes::Solid) {
+                img.setPixel(coord, color_table.at(type));
+            } else if(smoke[i * m_width + j] > 0.15f) {
                 uint8_t val = 255 * smoke[i * m_width + j];
                 img.setPixel(coord, sf::Color(val, val, val));
             } else {
