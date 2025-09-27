@@ -8,13 +8,14 @@
 struct MeasurementGroup {
     double sum = 0.0;
     std::unordered_map<std::string, MeasurementGroup> subgroups;
-    void print_children(uint32_t sample_count = 1, std::ostream &os = std::cout, std::string prefix = "") const
+    void print_children(double root_t, uint32_t sample_count = 1, std::ostream &os = std::cout, std::string prefix = "") const
     {
         for(const auto &g : subgroups) {
-            double percentage = g.second.sum / this->sum;
-            os << prefix << g.first << ":\t" << g.second.sum / sample_count << "(" << std::setprecision(2) << percentage * 100.0
-               << "% )\n";
-            g.second.print_children(sample_count, os, prefix + '\t');
+            double lpercentage = g.second.sum / this->sum * 100.0;
+            double gpercentage = g.second.sum / root_t * 100.0;
+            os << prefix << g.first << ":\t" << g.second.sum / sample_count << "s (l: " << std::setprecision(2) << lpercentage
+               << "%; g: " << gpercentage << "%)\n";
+            g.second.print_children(root_t, sample_count, os, prefix + '\t');
         }
     }
     void updateSum()
@@ -43,9 +44,9 @@ public:
     void print(uint32_t sample_count = 1, std::ostream &os = std::cout)
     {
         calcChange();
-        os << "ROOT:\t" << this->sum / sample_count << '\n';
+        os << "ROOT:\t" << this->sum / sample_count << "s\n";
         std::string prefix = "\t";
-        this->print_children(sample_count, os, prefix);
+        this->print_children(this->sum, sample_count, os, prefix);
     }
     double getMeasurement(std::string name)
     {
