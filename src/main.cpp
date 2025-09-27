@@ -34,17 +34,17 @@ int main(int argc, char **argv)
     std::string help_msg = R"""(
 Usage: fluid-sim [OPTIONS]
 Options:
-        -w [width] 
-        -h [height] 
-        -c [cell scale] 
-        -r [particle radius] 
-        -n [amount of particles]
-        -i [num of iterations for particle solver]
-        -f [num of iterations for fluid solver]
-        -x [overrelaxation coef]
-        -d [1/0 should drift be corrected]
-        -t [raporting time in seconds]
-        -s [spacing between particles (scale of radius)]
+        -w --width           [width] 
+        -q --height          [height] 
+        -c --cell-size       [cell scale] 
+        -r --radius          [particle radius] 
+        -n --num             [amount of particles]
+        -i --particle-iters  [num of iterations for particle solver]
+        -f --fluid-iters     [num of iterations for fluid solver]
+        -x --overrelaxation  [overrelaxation coef]
+        -d --correct-drift   [1/0 should drift be corrected]
+        -t --raport-interval [raporting time in seconds]
+        -s --spacing         [spacing between particles (scale of radius)]
 When using application:
         Click and hold mouse to interact,
         Press G to toggle grid view,
@@ -53,31 +53,31 @@ When using application:
     try {
         for(int i = 1; i < argc; i += 2) {
             std::string flag = argv[i];
-            std::string arg = argv[i + 1];
-            if(flag == "-w") {
+            std::string arg = i + 1 < argc ? argv[i + 1] : "";
+            if(flag == "-w" || flag == "--width") {
                 w = stoi(arg);
-            } else if(flag == "-h") {
+            } else if(flag == "-q" || flag == "--height") {
                 h = stoi(arg);
-            } else if(flag == "-c") {
+            } else if(flag == "-c" || flag == "--cell-size") {
                 cell_size_scale = stof(arg);
-            } else if(flag == "-r") {
+            } else if(flag == "-r" || flag == "--radius") {
                 particles.radius = stof(arg);
-            } else if(flag == "-n") {
+            } else if(flag == "-n" || flag == "--num") {
                 particles.max_particle_count = stoi(arg);
-            } else if(flag == "-i") {
+            } else if(flag == "-i" || flag == "--particle-iters") {
                 numParticleIters = stoi(arg);
-            } else if(flag == "-f") {
+            } else if(flag == "-f" || flag == "--fluid-iters") {
                 numFluidIters = stoi(arg);
-            } else if(flag == "-x") {
+            } else if(flag == "-x" || flag == "--overrelaxation") {
                 overrelaxation = stof(arg);
-            } else if(flag == "-d") {
+            } else if(flag == "-d" || flag == "--correct-drift") {
                 pushOut = stoi(arg);
-            } else if(flag == "-t") {
+            } else if(flag == "-t" || flag == "--raport-interval") {
                 raporting_interval = stof(arg);
-            } else if(flag == "-s") {
+            } else if(flag == "-s" || flag == "--spacing") {
                 spacing = stof(arg);
-            } else if(flag == "--help") {
-                printf("%s", help_msg.c_str());
+            } else if(flag == "-h" || flag == "--help") {
+                std::cout << help_msg;
                 return 0;
             } else {
                 throw std::invalid_argument("unrecognized flag");
@@ -86,7 +86,7 @@ When using application:
     } catch(...) {
         printf("incorrect arguments were given!");
         printf("%s", help_msg.c_str());
-        return 0;
+        return 1;
     }
     auto fluid_cell_size = particles.diameter * cell_size_scale;
     AABB screen_area = AABB::CreateMinSize({ 0, 0 }, { w, h });
