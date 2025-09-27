@@ -19,7 +19,6 @@ class Fluid {
     float m_cell_size;
     std::vector<Color> cell_color;
     std::vector<eCellTypes> cell_type;
-    std::vector<float> solid;
     std::vector<float> pressure;
     std::vector<vec2f> prev_velocities;
     std::vector<vec2f> velocities;
@@ -41,21 +40,31 @@ public:
     inline int width() const { return m_width; }
     inline int height() const { return m_height; }
     inline float cell_size() const { return m_cell_size; }
+    std::vector<float> solid;
     std::vector<float> smoke;
     float fluid_density = 1;
     float air_density = 0.001;
     float flipRatio = 0.9f;
 
+    struct CollisionDetection {
+        vec2f collision_point;
+        vec2f normal;
+        struct {
+            int i, j;
+        } grid_idx;
+    };
+    std::optional<CollisionDetection> findCollision(vec2f origin, vec2f dir, const std::vector<eCellTypes> &col_types);
     void updateParticleDensity(Particles &particles);
     void transferVelocitiesToGrid(float flipRatio, Particles &particles);
     void transferVelocitiesFromGrid(float flipRatio, Particles &particles);
+    void collideWithGrid(Particles &particles, float dt);
     void transferBetweenGrids(std::vector<vec2f> &vel1, eCellTypes type1, std::vector<vec2f> &vel2, eCellTypes type2,
                               float ratio);
     void solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f> &vels, std::function<float(int)> solid,
                                 float density, int numIters, float overRelaxation, bool compensateDrift);
 
-    std::map<std::string, float> simulate(Particles &particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters,
-                                          int numParticleIters, float overRelaxation, bool compensateDrift);
+    void simulate(Particles &particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters, int numParticleIters,
+                  float overRelaxation, bool compensateDrift);
     void draw(AABB area, Particles &particles, sf::RenderTarget &window,
               std::unordered_map<eCellTypes, Color> color_table = {
                   { eCellTypes::Air,   Color(0,   0,   50)  },
@@ -103,7 +112,7 @@ void Fluid::advectAny(float dt, std::vector<T> &vec, std::vector<vec2f> &vels, e
 
     for(auto j = 0; j < m_height - 1; j++) {
         for(auto i = 0; i < m_width - 1; i++) {
-            if(solid[i + j * m_width] != 0.0) {
+            if(solid[i + j * m_width] != 1.0) {
                 auto uu = (vels[i + j * n].x + vels[i + 1 + j * n].x) * 0.5;
                 auto vv = (vels[i + j * n].y + vels[i + (j + 1) * n].y) * 0.5;
                 auto x = i * m_cell_size + half_size - dt * uu;

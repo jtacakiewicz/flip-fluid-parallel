@@ -1,7 +1,10 @@
 #include "fluid.hpp"
+#include "benchmark/benchmark.hpp"
 #include "cuda/particle.hpp"
 #include "time.hpp"
+#include <SFML/System/Vector2.hpp>
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <vector>
 Fluid::Fluid(float cell_size, int width, int height)
@@ -12,7 +15,7 @@ Fluid::Fluid(float cell_size, int width, int height)
 {
     cell_color = std::vector<Color>(m_num_cells);
     cell_type = std::vector<eCellTypes>(m_num_cells, eCellTypes::Air);
-    solid = std::vector<float>(m_num_cells, 1.f);
+    solid = std::vector<float>(m_num_cells, 0.f);
     particle_density = std::vector<float>(m_num_cells, 0.f);
     pressure = std::vector<float>(m_num_cells, 0.f);
     smoke = std::vector<float>(m_num_cells, 0.f);
@@ -25,7 +28,7 @@ Fluid::Fluid(float cell_size, int width, int height)
     for(int i = 0; i < m_height; i++) {
         for(int j = 0; j < m_width; j++) {
             if(j == 0 || i == 0 || i == m_height - 1 || j == m_width - 1) {
-                solid[i * width + j] = 0.f;
+                solid[i * width + j] = 1.f;
             }
             if(i > 10 && i < 20 && j > 10 && j < 20) {
                 smoke[i * width + j] = 1.f;
@@ -53,8 +56,114 @@ std::tuple<float, float, float, float> combineShares(float share0_x, float share
     return { d0, d1, d2, d3 };
 }
 
+void Fluid::collideWithGrid(Particles &particles, float dt)
+{
+    EMP_BENCHMARK_FUNC()
+    const std::vector<eCellTypes> collision_blocks = { eCellTypes::Solid };
+    for(int i = 0; i < particles.max_particle_count; i++) {
+        auto pos = particles.position[i];
+        auto vel = particles.velocity[i];
+        auto collision = findCollision(pos, vel * dt, collision_blocks);
+        int ii = pos.x / m_cell_size;
+        int jj = pos.y / m_cell_size;
+
+        if(collision.has_value()) {
+            auto n = collision->normal;
+            particles.position[i] = collision->collision_point + n;
+            particles.velocity[i] -= n * dot(n, vel);
+        }
+    }
+}
+std::optional<Fluid::CollisionDetection> Fluid::findCollision(vec2f origin, vec2f dir, const std::vector<eCellTypes> &col_types)
+{
+    auto origin_type = cell_type[floorf(origin.x / m_cell_size) + floorf(origin.y / m_cell_size) * m_width];
+    auto backingUp = std::find(col_types.begin(), col_types.end(), origin_type) != col_types.end();
+    if(backingUp) {
+        dir *= -100.f;
+    }
+    if(qlen(dir) < 0.0001f) {
+        return {};
+    }
+    float inv_c_size = 1.f / m_cell_size;
+    float c_size = m_cell_size;
+    int n = m_width;
+
+    vec2f end = origin + dir;
+    float slope = dir.y / dir.x;
+    if(dir.x == 0.f) {
+        slope = INFINITY;
+    }
+    float constant = origin.y - slope * origin.x;
+    if(dir.x == 0.f) {
+        constant = 0.f;
+    }
+
+    float x_adv_dir = std::copysign(1.f, dir.x);
+    float y_adv_dir = std::copysign(1.f, dir.y);
+
+    float cur_x = floorf(origin.x * inv_c_size) * c_size + c_size * (dir.x > 0.f);
+    float cur_y = floorf(origin.y * inv_c_size) * c_size + c_size * (dir.y > 0.f);
+    vec2f last_meas = origin;
+    float summaric_len = 0.f;
+    while(cur_x * x_adv_dir < end.x * x_adv_dir + c_size && cur_y * y_adv_dir < end.y * y_adv_dir + c_size) {
+        float x_step = (cur_y - constant) / slope;
+        if(slope == INFINITY) {
+            x_step = origin.x;
+        }
+        float y_step = slope * cur_x + constant;
+        vec2f y_axis(x_step, cur_y);
+        vec2f x_axis(cur_x, y_step);
+        vec2f norm;
+        float len1 = qlen(last_meas - y_axis);
+        float len2 = qlen(last_meas - x_axis);
+        int i, j;
+        if(len1 < len2) {
+            last_meas = y_axis;
+            norm = { 0.f, -y_adv_dir };
+            i = x_step * inv_c_size;
+            j = (cur_y + y_adv_dir * c_size * 0.5f) * inv_c_size;
+
+            summaric_len += len1;
+            cur_y += c_size * y_adv_dir;
+        } else {
+            last_meas = x_axis;
+            norm = { -x_adv_dir, 0.f };
+            i = (cur_x + x_adv_dir * c_size * 0.5f) * inv_c_size;
+            j = y_step * inv_c_size;
+
+            summaric_len += len2;
+            cur_x += c_size * x_adv_dir;
+        }
+        if(qlen(last_meas - origin) > qlen(dir)) {
+            break;
+        }
+        if(i >= m_width || j >= m_height || i < 0 || j < 0) {
+            continue;
+        }
+        auto type = cell_type[i + j * n];
+        auto hasCollided = std::find(col_types.begin(), col_types.end(), type) != col_types.end();
+        if(hasCollided && !backingUp) {
+            CollisionDetection result {
+                .collision_point = last_meas,
+                .normal = norm,
+                .grid_idx = { i, j }
+            };
+            return result;
+        } else if(!hasCollided && backingUp) {
+            CollisionDetection result {
+                .collision_point = last_meas,
+                .normal = -norm,
+                .grid_idx = { i, j }
+            };
+            return result;
+        }
+    }
+    return {};
+}
+
 void Fluid::updateParticleDensity(Particles &particles)
 {
+    EMP_BENCHMARK_FUNC()
     int n = m_width;
     float h = m_cell_size;
     float inv_csize = 1.f / m_cell_size;
@@ -108,14 +217,14 @@ void Fluid::updateParticleDensity(Particles &particles)
 }
 void Fluid::transferVelocitiesToGrid(float flipRatio, Particles &particles)
 {
+    for(auto i = 0; i < m_num_cells; i++) {                                     
+        cell_type[i] = (solid[i] == 1.0 ? eCellTypes::Solid : eCellTypes::Air); 
+    }
+    EMP_BENCHMARK_FUNC();
     auto inv_cell_size = 1.f / m_cell_size;
     auto half_cell_size = 0.5 * m_cell_size;
 
     prev_velocities = velocities;
-
-    for(auto i = 0; i < m_num_cells; i++) {
-        cell_type[i] = (solid[i] == 0.0 ? eCellTypes::Solid : eCellTypes::Air);
-    }
 
     for(auto i = 0; i < Particles::max_particle_count; i++) {
         auto x = particles.position[i].x;
@@ -206,6 +315,7 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles &particles)
 }
 void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles &particles)
 {
+    EMP_BENCHMARK_FUNC()
     auto inv_cell_size = 1.f / m_cell_size;
     auto half_cell_size = 0.5 * m_cell_size;
 
@@ -278,6 +388,7 @@ void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles &particles)
 void Fluid::transferBetweenGrids(std::vector<vec2f> &vel1, eCellTypes type1, std::vector<vec2f> &vel2, eCellTypes type2,
                                  float ratio)
 {
+    EMP_BENCHMARK_FUNC()
     auto n = m_width;
     auto oneOfTypes = [&](eCellTypes type) -> bool { return type == type1 || type == type2; };
     for(auto j = 0; j < m_height - 1; j++) {
@@ -309,6 +420,7 @@ void Fluid::transferBetweenGrids(std::vector<vec2f> &vel1, eCellTypes type1, std
 void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vector<vec2f> &vels, std::function<float(int)> solid,
                                    float density, int numIters, float overRelaxation, bool compensateDrift)
 {
+    EMP_BENCHMARK_FUNC()
     auto n = m_width;
     auto cp = density * m_cell_size / dt;
 
@@ -357,12 +469,11 @@ void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vect
         }
     }
 }
-std::map<std::string, float> Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters,
-                                             int numParticleIters, float overRelaxation, bool compensateDrift)
+void Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravity, int numPressureIters, int numParticleIters,
+                     float overRelaxation, bool compensateDrift)
 {
     auto numSubSteps = 1;
     auto sdt = dt / numSubSteps;
-    std::map<std::string, float> bench;
 
     sim_area.setSize(sim_area.size() - vec2f(m_cell_size, m_cell_size) * 2.f);
 
@@ -370,27 +481,22 @@ std::map<std::string, float> Fluid::simulate(Particles &particles, AABB sim_area
     float fluid_time = 0.f;
     for(int step = 0; step < numSubSteps; step++) {
         Stopwatch local_stop;
+        for(auto i = 0; i < m_num_cells; i++) {
+            cell_type[i] = (solid[i] == 1.0 ? eCellTypes::Solid : eCellTypes::Air);
+        }
         {
-            ParticleSolveBlock solv(particles);
             for(int i = 0; i < numParticleIters; i++) {
                 accelerate(particles, gravity);
-                bench["particles::accelerate"] += local_stop.restart();
                 integrate(particles, sdt / (float)numParticleIters);
-                bench["particles::integrate"] += local_stop.restart();
-                constraint(particles, sim_area);
-                bench["particles::constraint"] += local_stop.restart();
-                auto results = collide(particles, sim_area);
-                for(auto [key, v] : results) {
-                    bench[key] += v;
+                collideWithGrid(particles, sdt / (float)numParticleIters);
+                if(i == 0) {
+                    collide(particles, sim_area);
                 }
-                bench["particles::collide"] += local_stop.restart();
+                constraint(particles, sim_area);
             }
         }
-        bench["fluid::advectSmoke"] += local_stop.restart();
-        transferVelocitiesToGrid(1.f, particles);
-        bench["fluid::transfer1"] += local_stop.restart();
+        transferVelocitiesToGrid(flipRatio, particles);
         updateParticleDensity(particles);
-        bench["fluid::density"] += local_stop.restart();
         prev_velocities = velocities;
         solveIncompressibility(
             sdt, eCellTypes::Fluid, velocities, [&](int idx) { return this->cell_type[idx] == eCellTypes::Solid; }, fluid_density,
@@ -414,17 +520,13 @@ std::map<std::string, float> Fluid::simulate(Particles &particles, AABB sim_area
             },
             air_density, numPressureIters, overRelaxation, false);
         advectAny(sdt, smoke, air_velocities, [&](float &f) -> float & { return f; }, m_cell_size / 2.f, m_cell_size / 2.f);
-
         transferBetweenGrids(velocities, eCellTypes::Fluid, air_velocities, eCellTypes::Air, 1.f - transfer_coef);
-        bench["fluid::incompressibility"] += local_stop.restart();
-        bench["fluid::advectSmoke"] += local_stop.restart();
         transferVelocitiesFromGrid(flipRatio, particles);
-        bench["fluid::transfer2"] += local_stop.restart();
     }
-    return bench;
 }
 void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std::unordered_map<eCellTypes, Color> color_table)
 {
+    EMP_BENCHMARK_FUNC()
     std::vector<float> vals(m_num_cells, 0);
     updateParticleDensity(particles);
     for(auto i = 0; i < Particles::max_particle_count; i++) {

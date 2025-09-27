@@ -1,4 +1,5 @@
 #include "particle.hpp"
+#include "benchmark/benchmark.hpp"
 #include "geometry_func.hpp"
 #include "time.hpp"
 #include <SFML/Graphics/CircleShape.hpp>
@@ -22,20 +23,23 @@ void cleanup(Particles &particles)
 }
 void accelerate(Particles &particles, vec2f gravity)
 {
+    EMP_BENCHMARK_FUNC();
     for(int i = 0; i < Particles::max_particle_count; i++) {
         particles.acceleration[i] += gravity;
     }
 }
 void integrate(Particles &particles, float dt)
 {
+    EMP_BENCHMARK_FUNC();
     for(int i = 0; i < Particles::max_particle_count; i++) {
-        particles.velocity[i] += particles.acceleration[i] * dt;
         particles.position[i] += particles.velocity[i] * dt;
+        particles.velocity[i] += particles.acceleration[i] * dt;
         particles.acceleration[i] = { 0, 0 };
     }
 }
 void resolveVelocities(Particles &particles, int p1, int p2, vec2f normal)
 {
+    EMP_BENCHMARK_FUNC();
     auto rel_vel = particles.velocity[p1] - particles.velocity[p2];
     auto rel_vel_normal = dot(rel_vel, normal);
     if(rel_vel_normal > 0) {
@@ -49,6 +53,7 @@ void resolveVelocities(Particles &particles, int p1, int p2, vec2f normal)
 }
 void processCollision(Particles &particles, int i, int ii)
 {
+    EMP_BENCHMARK_FUNC();
     auto diff = particles.position[ii] - particles.position[i];
     const float min_dist = particles.radius * 2;
     if(qlen(diff) < min_dist * min_dist && qlen(diff) > 1e-10f) {
@@ -63,6 +68,7 @@ void processCollision(Particles &particles, int i, int ii)
 }
 void collide(Particles &particles)
 {
+    EMP_BENCHMARK_FUNC();
     for(int i = 0; i < Particles::max_particle_count; i++) {
         for(int ii = i + 1; ii < Particles::max_particle_count; ii++) {
             processCollision(particles, i, ii);
@@ -95,9 +101,8 @@ void compareWithNeighbours(Particles &particles, int col, int row, int max_segs_
         }
     }
 }
-std::map<std::string, float> collide(Particles &particles, AABB sim_area)
+void collide(Particles &particles, AABB sim_area)
 {
-    std::map<std::string, float> result;
     const uint32_t max_segs_cols = sim_area.size().x / particles.diameter + 1 + 2;
     const uint32_t max_segs_rows = sim_area.size().y / particles.diameter + 1 + 2;
     static std::vector<CompactVec> col_grid;
@@ -108,36 +113,40 @@ std::map<std::string, float> collide(Particles &particles, AABB sim_area)
     std::unordered_set<uint32_t> active_containers;
     Stopwatch stop;
     int counter = 0;
-    for(int i = 0; i < Particles::max_particle_count; i++) {
-        uint32_t col = (particles.position[i].x - sim_area.min.x) / particles.diameter;
-        uint32_t row = (particles.position[i].y - sim_area.min.y) / particles.diameter;
-        if(col + 1 >= max_segs_cols || row + 1 >= max_segs_rows) {
-            std::cerr << "out of range particle\n";
-            continue;
+    {
+        EMP_BENCHMARK_FUNCn("assign");
+        for(int i = 0; i < Particles::max_particle_count; i++) {
+            uint32_t col = (particles.position[i].x - sim_area.min.x) / particles.diameter;
+            uint32_t row = (particles.position[i].y - sim_area.min.y) / particles.diameter;
+            if(col + 1 >= max_segs_cols || row + 1 >= max_segs_rows) {
+                std::cerr << "out of range particle\n";
+                continue;
+            }
+            auto &comp_vec = col_grid[(row + 1) * max_segs_rows + col + 1];
+            comp_vec.push_back(i);
+            active_containers.insert((row + 1) * max_segs_rows + col + 1);
         }
-        auto &comp_vec = col_grid[(row + 1) * max_segs_rows + col + 1];
-        comp_vec.push_back(i);
-        active_containers.insert((row + 1) * max_segs_rows + col + 1);
     }
-    result["particles::collide::assign"] += stop.restart();
-
-    for(auto i : active_containers) {
-        auto row = i / max_segs_rows;
-        auto col = i % max_segs_rows;
-        compareWithNeighbours(particles, col, row, max_segs_rows, col_grid);
+    {
+        EMP_BENCHMARK_FUNCn("compare");
+        for(auto i : active_containers) {
+            auto row = i / max_segs_rows;
+            auto col = i % max_segs_rows;
+            compareWithNeighbours(particles, col, row, max_segs_rows, col_grid);
+        }
     }
-    result["particles::collide::compare"] += stop.restart();
-
-    for(auto container : active_containers) {
-        auto row = container / max_segs_rows;
-        auto col = container % max_segs_rows;
-        col_grid[row * max_segs_rows + col].clear();
+    {
+        EMP_BENCHMARK_FUNCn("cleanup");
+        for(auto container : active_containers) {
+            auto row = container / max_segs_rows;
+            auto col = container % max_segs_rows;
+            col_grid[row * max_segs_rows + col].clear();
+        }
     }
-    result["particles::collide::cleanup"] += stop.restart();
-    return result;
 }
 void constraint(Particles &particles, AABB area)
 {
+    EMP_BENCHMARK_FUNC();
     for(int i = 0; i < Particles::max_particle_count; i++) {
         if(!isOverlappingPointAABB(particles.position[i], area)) {
             if(particles.position[i].x > area.max.x || particles.position[i].x < area.min.x) {
@@ -153,6 +162,7 @@ void constraint(Particles &particles, AABB area)
 }
 void draw(Particles &particles, sf::RenderTarget &window, sf::Color color)
 {
+    EMP_BENCHMARK_FUNC();
     sf::VertexArray quads(sf::PrimitiveType::Triangles, 6 * Particles::max_particle_count);
 
     for(int i = 0; i < Particles::max_particle_count; i += 1) {

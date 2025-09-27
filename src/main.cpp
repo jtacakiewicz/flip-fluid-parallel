@@ -1,10 +1,14 @@
 #include <SFML/Graphics/CircleShape.hpp>
 #include <SFML/Graphics/Color.hpp>
+#include <SFML/Graphics/PrimitiveType.hpp>
 #include <SFML/Graphics/RenderWindow.hpp>
 #include <SFML/Audio.hpp>
 #include <SFML/System/Clock.hpp>
 #include <SFML/Window/Event.hpp>
+#include <cmath>
+#include <iomanip>
 #include <numeric>
+#include "benchmark/benchmark.hpp"
 #include "fluid.hpp"
 #include "particle.hpp"
 #include "geometry_func.hpp"
@@ -88,31 +92,24 @@ When using application:
     AABB screen_area = AABB::CreateMinSize({ 0, 0 }, { w, h });
     RenderWindow window(VideoMode(Vector2u(w, h)), "demo");
     auto area = screen_area;
-    area.setSize(area.size() * 0.75f);
+    area.setSize(area.size() * 0.8f);
     init(particles, area, spacing);
 
     auto fluid_size = screen_area.size() / fluid_cell_size;
-    Fluid fluid(fluid_cell_size, fluid_size.x + 1, fluid_size.y + 1);
+    Fluid fluid(fluid_cell_size, fluid_size.x, fluid_size.y);
 
-    std::cout << "{\n";
-    auto dispNameValue = [&](std::string name, auto value, bool isLast = false) {
-        std::cout << "\t\"" << name << "\" : \"" << value << "\"";
-        if(!isLast) {
-            std::cout << ",";
-        }
-        std::cout << "\n";
-    };
+    auto dispNameValue = [&](std::string name, auto value, bool isLast = false) { std::cout << name << ": " << value << "\n"; };
     dispNameValue("particle radius", particles.radius);
     dispNameValue("particle count", Particles::max_particle_count);
     dispNameValue("num of particle iters", numParticleIters);
     dispNameValue("num of fluid iters", numFluidIters);
     dispNameValue("overrelaxation", overrelaxation);
-    std::cout << "\t\"measurements\" : [\n";
 
     float total_time = 0;
     Clock deltaClock;
     bool shouldReport = true;
     Stopwatch report_clock;
+    uint32_t sample_count;
     report_clock.restart();
     while(window.isOpen()) {
         while(const std::optional event = window.pollEvent()) {
@@ -145,44 +142,16 @@ When using application:
 
         total_time += deltaTime;
 
-        static std::vector<std::map<std::string, float>> times;
-        auto cur_times = fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters,
-                                        overrelaxation, pushOut);
-        times.push_back(cur_times);
+        fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters, overrelaxation,
+                       pushOut);
+        sample_count += 1;
         if(report_clock.getElapsedTime() > raporting_interval && shouldReport) {
-            static bool displayed = false;
-            std::cout << "\t\t";
-            if(displayed) {
-                std::cout << ",";
-            }
-            displayed = true;
-            std::cout << "{\n";
+            auto total_time = BenchmarkRegistry().get().getMeasurement("ROOT");
+            std::cout << "FPS:\t" << std::setprecision(2) << 1.0 / (total_time / sample_count) << '\n';
+            BenchmarkRegistry().get().print(sample_count);
+            BenchmarkRegistry().get().reset();
             report_clock.restart();
-            auto displayAvg = [&](std::string name, auto &vec_table) {
-                float sum = 0.f;
-                for(auto &tab : vec_table) {
-                    sum += tab[name];
-                }
-                auto avg = sum / vec_table.size();
-                std::cout << "\"" << name << "\" : \"" << avg << "\"";
-            };
-            for(auto [name, val] : times.front()) {
-                std::cout << "\t\t\t";
-                displayAvg(name, times);
-                std::cout << ",\n";
-            }
-            float sum = 0.f;
-            for(const auto &v : times) {
-                for(auto [name, val] : v) {
-                    sum += val;
-                }
-            }
-            float avg = sum / times.size();
-            std::cout << "\t\t\t\"FPS\" : \"" << 1.f / avg << "\"";
-            std::cout << ",\n";
-
-            std::cout << "\t\t}\n";
-            times.clear();
+            sample_count = 0;
         }
 
         window.clear();
@@ -205,7 +174,7 @@ When using application:
         if(sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S)) {
             int x = mouse_pos.x / fluid.cell_size();
             int y = mouse_pos.y / fluid.cell_size();
-            fluid.smoke[y * fluid.width() + x] = 1.f;
+            fluid.solid[y * fluid.width() + x] = 1.f;
         }
 
         if(drawGrid) {
@@ -221,11 +190,29 @@ When using application:
         cs.setOutlineColor(Color(255, 255, 255));
         cs.setOutlineThickness(2.f);
         window.draw(cs);
+        vec2f origin = { 500, 500 };
+        auto collision = fluid.findCollision(origin, mouse_pos - origin, { eCellTypes::Solid });
+        sf::CircleShape circ(5.f);
+        circ.setOrigin({ 5.f, 5.f });
+        circ.setPosition(vec2f(origin.x, h - origin.y));
+        window.draw(circ);
+        if(collision) {
+            auto cp = collision->collision_point;
+
+            circ.setPosition(vec2f(cp.x, h - cp.y));
+            sf::Vertex verts[2];
+            for(int i = 0; i < 2; i++) {
+                verts[i].color = sf::Color(0xffffff);
+                cp = cp + collision->normal * 10.f;
+                verts[i].position = vec2f(cp.x, h - cp.y);
+            }
+            window.draw(circ);
+            window.draw(verts, 2U, sf::PrimitiveType::Lines);
+        }
         window.display();
         last_mouse_pos = mouse_pos;
     }
     cleanup(particles);
-    std::cout << "\t]\n}\n";
 
     return 0;
 }
