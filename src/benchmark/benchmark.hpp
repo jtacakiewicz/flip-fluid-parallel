@@ -138,6 +138,11 @@ public:
     ~BenchmarkScoped() { this->stop(); }
 };
 
+#ifndef EMP_BENCHMARK 
+#define EMP_BENCHMARK 1
+#endif
+
+#if EMP_BENCHMARK
 #define EMP_CONCAT(a, b)                       EMP_CONCAT_INNER(a, b)
 #define EMP_CONCAT_INNER(a, b)                 a##b
 #define EMP_UNIQUE_NAME(base)                  EMP_CONCAT(EMP_CONCAT(base, __COUNTER__), EMP)
@@ -146,4 +151,14 @@ public:
 
 #define EMP_BENCHMARK_FUNCn(name) EMP_BENCHMARK_FUNCn_INNER(name, EMP_UNIQUE_NAME(__func__))
 #define EMP_BENCHMARK_FUNC()      EMP_BENCHMARK_FUNC_INNER(EMP_UNIQUE_NAME(__func__))
+#else
+#define EMP_CONCAT(a, b)
+#define EMP_CONCAT_INNER(a, b)
+#define EMP_UNIQUE_NAME(base)
+#define EMP_BENCHMARK_FUNC_INNER(uname)
+#define EMP_BENCHMARK_FUNCn_INNER(name, uname)
+
+#define EMP_BENCHMARK_FUNCn(name)
+#define EMP_BENCHMARK_FUNC()
+#endif
 #endif

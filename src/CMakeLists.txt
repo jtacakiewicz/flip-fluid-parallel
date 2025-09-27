@@ -114,6 +114,7 @@ else()
     target_include_directories(fluid-sim PRIVATE ${SEQ_DIR})
 
 endif()
+target_compile_definitions(fluid-sim PRIVATE "EMP_BENCHMARK=1")
 
 if(NOT BUILD_ALL)
     target_link_libraries(fluid-sim PUBLIC  sfml-graphics sfml-window sfml-system)

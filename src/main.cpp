@@ -219,7 +219,7 @@ When using application:
         fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters, overrelaxation,
                        pushOut);
         sample_count += 1;
-        if(report_clock.getElapsedTime() > raporting_interval && shouldReport && EMP_DEBUG) {
+        if(report_clock.getElapsedTime() > raporting_interval && shouldReport && EMP_BENCHMARK) {
             auto total_time = BenchmarkRegistry().get().getMeasurement("ROOT");
             std::cout << "FPS:\t" << std::setprecision(2) << 1.0 / (total_time / sample_count) << '\n';
             BenchmarkRegistry().get().print(sample_count);
