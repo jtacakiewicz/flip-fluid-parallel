@@ -1,13 +1,13 @@
-include(FetchContent)
-FetchContent_Declare(SFML
-    GIT_REPOSITORY https://github.com/SFML/SFML.git
-    GIT_TAG 3.0.1
-    GIT_SHALLOW ON
-    EXCLUDE_FROM_ALL
-    SYSTEM)
-FetchContent_MakeAvailable(SFML)
-
-
+# include(FetchContent)
+# FetchContent_Declare(SFML
+#     GIT_REPOSITORY https://github.com/SFML/SFML.git
+#     GIT_TAG 3.0.1
+#     GIT_SHALLOW ON
+#     EXCLUDE_FROM_ALL
+#     SYSTEM)
+# FetchContent_MakeAvailable(SFML)
+set(SFML_STATIC_LIBRARIES ON)
+find_package(SFML 3.0.1 COMPONENTS Graphics REQUIRED)
 
 set(SEQ_DIR "./sequential")
 set(OPENMP_DIR "./openmp")
@@ -117,7 +117,7 @@ endif()
 target_compile_definitions(fluid-sim PRIVATE "EMP_BENCHMARK=1")
 
 if(NOT BUILD_ALL)
-    target_link_libraries(fluid-sim PUBLIC  sfml-graphics sfml-window sfml-system)
+    target_link_libraries(fluid-sim PUBLIC  SFML::Graphics SFML::Window SFML::System)
     target_include_directories(fluid-sim PRIVATE "${SFML_INCLUDE_DIR}")
 endif()
 # target_link_libraries(fluid-sim PRIVATE "${OpenMP_CXX_FLAGS}")

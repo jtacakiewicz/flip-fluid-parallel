@@ -1,12 +1,6 @@
 with import <nixpkgs> {};
 
 let
-    gcc12 = pkgs.gcc12;
-    sfmlWithGcc12 = pkgs.sfml.overrideAttrs (old: {
-        nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.gcc12 ];
-        CXX = "${pkgs.gcc12}/bin/g++";
-        CC  = "${pkgs.gcc12}/bin/gcc";
-    });
 in
 mkShell {
     name = "cuda-and-openmp";
@@ -20,6 +14,32 @@ mkShell {
     ];
 
     buildInputs = with pkgs; [
+        (pkgs.stdenv.mkDerivation {
+            pname = "sfml";
+            version = "3.0.1";
+
+            src = pkgs.fetchgit {
+                url = "https://github.com/SFML/SFML.git";
+                rev = "3.0.1";  # or a specific commit hash
+                sha256 = "sha256-YqlrY0iIsxcjlLb+buMU0zpXo7/eKSKxOsITWf7BX6s=";
+            };
+            nativeBuildInputs = [ 
+                cmake 
+                pkg-config 
+                xorg.libX11
+                xorg.libXrandr
+                xorg.libXinerama
+                xorg.libXcursor
+                xorg.libXi
+                libGLU 
+                libGL
+                udev
+                freetype
+                libvorbis
+                flac
+            ];
+        })
+        pkgs.pkg-config 
         cudaPackages.cuda_cudart
         cudaPackages.cuda_nvcc
         cudaPackages.cuda_cccl
@@ -32,7 +52,6 @@ mkShell {
         libGLU libGL
         glm
         glfw
-        sfmlWithGcc12
         freetype
         vulkan-loader
         pkg-config
@@ -46,8 +65,8 @@ mkShell {
         flac
     ];
 
-    SFML_PATH = "${sfmlWithGcc12}/lib/cmake";
     shellHook = ''
+        export SFML_PATH=${sfml}/lib/cmake
         export JAVA_HOME=${pkgs.jdk8}
         export CC=${pkgs.gcc12}/bin/gcc
         export CXX=${pkgs.gcc12}/bin/g++
