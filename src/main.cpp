@@ -119,6 +119,7 @@ When using application:
         { sf::Keyboard::Key::G, &drawGrid      },
         { sf::Keyboard::Key::X, &drawPressure  },
     };
+    std::vector<std::pair<int, vec2f>> selected_particles;
 
     float total_time = 0;
     Clock deltaClock;
@@ -156,17 +157,16 @@ When using application:
         if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
             switch(cur_mouse_mode) {
                 case MOUSE_MODE::HOLD:
-                    for(int i = 0; i < Particles::max_particle_count; i++) {
-                        auto scalar = length(mouse_dir) / deltaTime;
-                        vec2f norm;
-                        if(qlen(mouse_dir) == 0.f) {
-                            norm = { 0, 0 };
-                        } else {
-                            norm = normal(mouse_dir);
+                    if(selected_particles.size() == 0) {
+                        for(int i = 0; i < Particles::max_particle_count; i++) {
+                            if(length(mouse_pos - particles.position[i]) < brush_size) {
+                                selected_particles.push_back({i, particles.position[i] - mouse_pos});
+                            }
                         }
-                        if(length(mouse_pos - particles.position[i]) < brush_size) {
-                            particles.velocity[i] = norm * std::clamp(scalar, 0.f, 1000.f);
-                        }
+                    }
+                    for(auto [i, off] : selected_particles) {
+                        particles.position[i] = mouse_pos + off;
+                        particles.velocity[i] = mouse_dir / deltaTime;
                     }
                     break;
                 case MOUSE_MODE::SOLID_GEN:
@@ -188,6 +188,8 @@ When using application:
                     }
                 } break;
             }
+        }else {
+            selected_particles = {};
         }
         //  other controls
         bool any_shortcut_pressed = false;
@@ -216,8 +218,10 @@ When using application:
         //  simulation
         total_time += deltaTime;
 
-        fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -1000.f), numFluidIters, numParticleIters, overrelaxation,
-                       pushOut);
+        if(deltaTime != 0.f) {
+            fluid.simulate(particles, screen_area, deltaTime, vec2f(0, -5.f), numFluidIters, numParticleIters, overrelaxation,
+                           pushOut);
+        }
         sample_count += 1;
         if(report_clock.getElapsedTime() > raporting_interval && shouldReport && EMP_BENCHMARK) {
             auto total_time = BenchmarkRegistry().get().getMeasurement("ROOT");

@@ -56,7 +56,7 @@ public:
     std::optional<CollisionDetection> findCollision(vec2f origin, vec2f dir, const std::vector<eCellTypes> &col_types);
     void updateParticleDensity(Particles &particles);
     void transferVelocitiesToGrid(float flipRatio, Particles &particles);
-    void transferVelocitiesFromGrid(float flipRatio, Particles &particles);
+    void transferVelocitiesFromGrid(float flipRatio, Particles &particles, float dt);
     void collideWithGrid(Particles &particles, float dt);
     void transferBetweenGrids(std::vector<vec2f> &vel1, eCellTypes type1, std::vector<vec2f> &vel2, eCellTypes type2,
                               float ratio);

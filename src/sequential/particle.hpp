@@ -9,6 +9,7 @@ struct Particles {
     static float radius;
     static float diameter;
     static uint32_t max_particle_count;
+    vec2f *previous_position;
     vec2f *position;
     vec2f *velocity;
     vec2f *acceleration;
@@ -24,6 +25,7 @@ struct ParticleSolveBlock {
 void derive(Particles &particles, float dt);
 void accelerate(Particles &particles, vec2f gravity);
 void integrate(Particles &particles, float dt);
+void deriveVelocities(Particles& particles, float dt);
 void collide(Particles &particles);
 void collide(Particles &particles, AABB sim_area);
 void constraint(Particles &particles, AABB area);

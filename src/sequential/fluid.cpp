@@ -1,6 +1,7 @@
 #include "fluid.hpp"
 #include "benchmark/benchmark.hpp"
 #include "cuda/particle.hpp"
+#include "particle.hpp"
 #include "time.hpp"
 #include <SFML/System/Vector2.hpp>
 #include <algorithm>
@@ -69,8 +70,7 @@ void Fluid::collideWithGrid(Particles &particles, float dt)
 
         if(collision.has_value()) {
             auto n = collision->normal;
-            particles.position[i] = collision->collision_point + n;
-            particles.velocity[i] -= n * dot(n, vel);
+            particles.position[i] = collision->collision_point;
         }
     }
 }
@@ -313,7 +313,7 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles &particles)
         }
     }
 }
-void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles &particles)
+void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles &particles, float dt)
 {
     EMP_BENCHMARK_FUNC()
     auto inv_cell_size = 1.f / m_cell_size;
@@ -378,8 +378,10 @@ void Fluid::transferVelocitiesFromGrid(float flipRatio, Particles &particles)
                 auto vel_comp = (1.0 - flipRatio) * picV + flipRatio * flipV;
                 if(component == 0) {
                     particles.velocity[i].x = vel_comp;
+                    particles.previous_position[i].x -= vel_comp * dt;
                 } else {
                     particles.velocity[i].y = vel_comp;
+                    particles.previous_position[i].y -= vel_comp * dt;
                 }
             }
         }
@@ -486,44 +488,39 @@ void Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravit
         for(auto i = 0; i < m_num_cells; i++) {
             cell_type[i] = (solid[i] == 1.0 ? eCellTypes::Solid : eCellTypes::Air);
         }
-        {
-            for(int i = 0; i < numParticleIters; i++) {
-                accelerate(particles, gravity);
-                integrate(particles, sdt / (float)numParticleIters);
-                collideWithGrid(particles, sdt / (float)numParticleIters);
-                if(i == 0) {
-                    collide(particles, sim_area);
-                }
-                constraint(particles, sim_area);
-            }
-        }
+
         transferVelocitiesToGrid(flipRatio, particles);
-        updateParticleDensity(particles);
         prev_velocities = velocities;
+        updateParticleDensity(particles);
         solveIncompressibility(
             sdt, eCellTypes::Fluid, velocities, [&](int idx) { return this->cell_type[idx] == eCellTypes::Solid; }, fluid_density,
             numPressureIters, overRelaxation, compensateDrift);
-        advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.x; }, 0.f, m_cell_size / 2.f);
-        advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.y; }, m_cell_size / 2.f, 0.f);
-
-        float transfer_coef = air_density / (fluid_density + air_density);
-        transferBetweenGrids(air_velocities, eCellTypes::Air, velocities, eCellTypes::Fluid, 1.f - transfer_coef);
-        solveIncompressibility(
-            sdt, eCellTypes::Air, air_velocities,
-            [&](int idx) {
-                if(this->cell_type[idx] == eCellTypes::Solid) {
-                    return 1.f;
-                }
-                if(this->cell_type[idx] == eCellTypes::Fluid) {
-                    float perc = particle_density[idx] / particleRestDensity;
-                    return std::clamp<float>(perc, 0.f, 1.f);
-                }
-                return 0.f;
-            },
-            air_density, numPressureIters, overRelaxation, false);
-        advectAny(sdt, smoke, air_velocities, [&](float &f) -> float & { return f; }, m_cell_size / 2.f, m_cell_size / 2.f);
-        transferBetweenGrids(velocities, eCellTypes::Fluid, air_velocities, eCellTypes::Air, transfer_coef);
-        transferVelocitiesFromGrid(flipRatio, particles);
+        // advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.x; }, 0.f, m_cell_size / 2.f);
+        // advectAny(sdt, air_velocities, air_velocities, [&](vec2f &v) -> float & { return v.y; }, m_cell_size / 2.f, 0.f);
+        //
+        // float transfer_coef = air_density / (fluid_density + air_density);
+        // transferBetweenGrids(air_velocities, eCellTypes::Air, velocities, eCellTypes::Fluid, 1.f - transfer_coef);
+        // solveIncompressibility(
+        //     sdt, eCellTypes::Air, air_velocities,
+        //     [&](int idx) {
+        //         if(this->cell_type[idx] == eCellTypes::Solid) {
+        //             return 1.f;
+        //         }
+        //         if(this->cell_type[idx] == eCellTypes::Fluid) {
+        //             float perc = particle_density[idx] / particleRestDensity;
+        //             return std::clamp<float>(perc, 0.f, 1.f);
+        //         }
+        //         return 0.f;
+        //     },
+        //     air_density, numPressureIters, overRelaxation, false);
+        // advectAny(sdt, smoke, air_velocities, [&](float &f) -> float & { return f; }, m_cell_size / 2.f, m_cell_size / 2.f);
+        // transferBetweenGrids(velocities, eCellTypes::Fluid, air_velocities, eCellTypes::Air, transfer_coef);
+        transferVelocitiesFromGrid(flipRatio, particles, sdt);
+        accelerate(particles, gravity / sdt);
+        integrate(particles, sdt);
+        deriveVelocities(particles, sdt);
+        collide(particles, sim_area);
+        constraint(particles, sim_area);
     }
 }
 sf::Color hsvToRgb(double h, double s, double v)

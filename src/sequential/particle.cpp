@@ -32,9 +32,20 @@ void integrate(Particles &particles, float dt)
 {
     EMP_BENCHMARK_FUNC();
     for(int i = 0; i < Particles::max_particle_count; i++) {
+        particles.previous_position[i] = particles.position[i];
         particles.position[i] += particles.velocity[i] * dt;
+        particles.previous_position[i] -= particles.acceleration[i] * dt * dt;
         particles.velocity[i] += particles.acceleration[i] * dt;
+
         particles.acceleration[i] = { 0, 0 };
+    }
+}
+void deriveVelocities(Particles& particles, float dt) {
+    EMP_BENCHMARK_FUNC();
+    if(dt == 0.f)
+        return;
+    for(int i = 0; i < Particles::max_particle_count; i++) {
+        particles.velocity[i] = (particles.position[i] - particles.previous_position[i]) / dt;
     }
 }
 void resolveVelocities(Particles &particles, int p1, int p2, vec2f normal)
@@ -45,8 +56,7 @@ void resolveVelocities(Particles &particles, int p1, int p2, vec2f normal)
     if(rel_vel_normal > 0) {
         return;
     }
-    float restitution = 0.1f;
-    float impulse = -(1 + restitution) * rel_vel_normal * 0.5;
+    float impulse = -rel_vel_normal * 0.5;
 
     particles.velocity[p1] += impulse * normal;
     particles.velocity[p2] -= impulse * normal;
@@ -59,11 +69,9 @@ void processCollision(Particles &particles, int i, int ii)
     if(qlen(diff) < min_dist * min_dist && qlen(diff) > 1e-10f) {
         auto l = length(diff);
         auto n = normal(diff);
-        static const float damping = 0.7f;
-        auto c = (min_dist - l) * 0.5f * damping;
+        auto c = (min_dist - l) * 0.5f;
         particles.position[i] -= n * c;
         particles.position[ii] += n * c;
-        resolveVelocities(particles, i, ii, -n);
     }
 }
 void collide(Particles &particles)
@@ -149,12 +157,6 @@ void constraint(Particles &particles, AABB area)
     EMP_BENCHMARK_FUNC();
     for(int i = 0; i < Particles::max_particle_count; i++) {
         if(!isOverlappingPointAABB(particles.position[i], area)) {
-            if(particles.position[i].x > area.max.x || particles.position[i].x < area.min.x) {
-                particles.velocity[i].x = 0;
-            }
-            if(particles.position[i].y > area.max.y || particles.position[i].y < area.min.y) {
-                particles.velocity[i].y = 0;
-            }
             particles.position[i].x = std::clamp(particles.position[i].x, area.min.x, area.max.x);
             particles.position[i].y = std::clamp(particles.position[i].y, area.min.y, area.max.y);
         }
@@ -186,6 +188,7 @@ void draw(Particles &particles, sf::RenderTarget &window, sf::Color color)
 void init(Particles &particles, AABB screen_area, float spacing, int seed)
 {
     particles.position = new vec2f[Particles::max_particle_count];
+    particles.previous_position = new vec2f[Particles::max_particle_count];
     particles.velocity = new vec2f[Particles::max_particle_count];
     particles.acceleration = new vec2f[Particles::max_particle_count];
     srand(seed);
@@ -194,6 +197,7 @@ void init(Particles &particles, AABB screen_area, float spacing, int seed)
     for(int i = 0; i < Particles::max_particle_count; i++) {
         particles.position[i].x = (i % width) * particles.radius * 2.f * spacing + screen_area.min.x;
         particles.position[i].y = (i / width) * particles.radius * 2.f * spacing + screen_area.min.y;
+        particles.previous_position[i] = particles.position[i];
 
         particles.velocity[i] = { 0, 0 };
         particles.acceleration[i] = { 0, 0 };
