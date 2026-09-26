@@ -47,7 +47,7 @@ Options:
         -x --overrelaxation  [overrelaxation coef]
         -d --correct-drift   [1/0 should drift be corrected]
         -t --raport-interval [raporting time in seconds]
-        -s --spacing         [spacing between particles (scale of radius)]
+        -s --spacing         [spacing between particles (scale of diameter)]
 When using application:
         Click and hold mouse to interact,
         Press 1 for grabbing, 2 for smoke generation and 3 for solid block drawing.
@@ -69,6 +69,7 @@ When using application:
                 cell_size_scale = stof(arg);
             } else if(flag == "-r" || flag == "--radius") {
                 particles.radius = stof(arg);
+                particles.diameter = particles.radius * 2.f;
             } else if(flag == "-n" || flag == "--num") {
                 particles.max_particle_count = stoi(arg);
             } else if(flag == "-i" || flag == "--particle-iters") {
@@ -104,6 +105,10 @@ When using application:
 
     auto fluid_size = screen_area.size() / fluid_cell_size;
     Fluid fluid(fluid_cell_size, fluid_size.x, fluid_size.y);
+    {
+        float s = particles.diameter * spacing;
+        fluid.particleRestDensity = (fluid.cell_size() / s) * (fluid.cell_size() / s);
+    }
 
     std::cout << "particle radius: " << particles.radius << "\n";
     std::cout << "particle count: " << Particles::max_particle_count << "\n";

@@ -28,7 +28,6 @@ class Fluid {
 
     std::vector<vec2f> velocities_diff;
     std::vector<float> particle_density;
-    float particleRestDensity = 0;
     //  x and y are not in grid coordinates but in global
     template <class T, class extracter>
     float sampleField(float x, float y, T *field, extracter getF, float dx_offset = NAN, float dy_offset = NAN) const;
@@ -37,6 +36,7 @@ class Fluid {
     void advectAny(float dt, std::vector<T> &vec, std::vector<vec2f> &vels, extrT func, float dx, float dy) const;
 
 public:
+    float particleRestDensity = 0;
     inline int width() const { return m_width; }
     inline int height() const { return m_height; }
     inline float cell_size() const { return m_cell_size; }
