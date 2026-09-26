@@ -453,14 +453,14 @@ void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vect
                 if(particleRestDensity > 0.0 && compensateDrift) {
                     auto k = 0.6;
                     auto compression = particle_density[i + j * n] - particleRestDensity;
-                    if(compression < 0.0) {
+                    if(compression > 0.0) {
                         div = div - k * compression;
                     }
                 }
 
                 auto dp = -div / s;
                 dp *= overRelaxation;
-                pressure[center] += dp * density;
+                pressure[center] += dp * cp;
 
                 vels[center].x -= sx0 * dp;
                 vels[right].x += sx1 * dp;
