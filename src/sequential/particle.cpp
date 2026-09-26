@@ -167,7 +167,7 @@ void draw(Particles &particles, sf::RenderTarget &window, sf::Color color)
 
     for(int i = 0; i < Particles::max_particle_count; i += 1) {
         auto pos = particles.position[i];
-        pos.y = window.getSize().y - pos.y;
+        pos.y = window.getSize().y / 2 - pos.y;
         //  define the position of the triangle's points
         quads[i * 6 + 0].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(0.f, particles.radius);
         quads[i * 6 + 1].position = sf::Vector2f(pos.x, pos.y) + sf::Vector2f(particles.radius, 0);

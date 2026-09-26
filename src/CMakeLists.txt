@@ -6,7 +6,7 @@
 #     EXCLUDE_FROM_ALL
 #     SYSTEM)
 # FetchContent_MakeAvailable(SFML)
-set(SFML_STATIC_LIBRARIES ON)
+set(SFML_STATIC_LIBRARIES OFF)
 find_package(SFML 3.0.1 COMPONENTS Graphics REQUIRED)
 
 set(SEQ_DIR "./sequential")
