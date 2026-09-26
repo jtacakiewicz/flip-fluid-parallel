@@ -226,7 +226,7 @@ void Fluid::transferVelocitiesToGrid(float flipRatio, Particles &particles)
 
     prev_velocities = velocities;
 
-    for(auto i = 0; i < Particles::max_particle_count; i++) {
+    for (auto i = 0; i < Particles::max_particle_count; i++) {
         auto x = particles.position[i].x;
         auto y = particles.position[i].y;
         auto xi = /* std::clamp( */ floorf(x * inv_cell_size) /* , 0.f, m_width - 1.f) */;
@@ -455,14 +455,14 @@ void Fluid::solveIncompressibility(float dt, eCellTypes expected_type, std::vect
                 if(particleRestDensity > 0.0 && compensateDrift) {
                     auto k = 0.6;
                     auto compression = particle_density[i + j * n] - particleRestDensity;
-                    if(compression < 0.0) {
+                    if(compression > 0.0) {
                         div = div - k * compression;
                     }
                 }
 
                 auto dp = -div / s;
                 dp *= overRelaxation;
-                pressure[center] += dp * density;
+                pressure[center] += dp * cp;
 
                 vels[center].x -= sx0 * dp;
                 vels[right].x += sx1 * dp;
@@ -518,9 +518,9 @@ void Fluid::simulate(Particles &particles, AABB sim_area, float dt, vec2f gravit
         transferVelocitiesFromGrid(flipRatio, particles, sdt);
         accelerate(particles, gravity / sdt);
         integrate(particles, sdt);
-        deriveVelocities(particles, sdt);
         collide(particles, sim_area);
         constraint(particles, sim_area);
+        deriveVelocities(particles, sdt);
     }
 }
 sf::Color hsvToRgb(double h, double s, double v)
@@ -580,12 +580,14 @@ void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std:
     EMP_BENCHMARK_FUNC()
     std::vector<float> vals(m_num_cells, 0);
     updateParticleDensity(particles);
+    auto half_cell_size = 0.5 * m_cell_size;
+    auto inv_cell_size = 1.f / m_cell_size;
     for(auto i = 0; i < Particles::max_particle_count; i++) {
         auto x = particles.position[i].x;
         auto y = particles.position[i].y;
 
-        auto [share0_x, x0, x1] = getCoords(x, 1.f / m_cell_size, m_width - 1);
-        auto [share0_y, y0, y1] = getCoords(y, 1.f / m_cell_size, m_height - 1);
+        auto [share0_x, x0, x1] = getCoords(x + half_cell_size, inv_cell_size, m_width - 1);
+        auto [share0_y, y0, y1] = getCoords(y + half_cell_size, inv_cell_size, m_height - 1);
 
         auto [d0, d1, d2, d3] = combineShares(share0_x, share0_y);
 
@@ -625,7 +627,11 @@ void Fluid::draw(AABB area, Particles &particles, sf::RenderTarget &window, std:
                 uint8_t r = 105 * (val * 0.7f + 0.3f);
                 uint8_t g = 120 * (val * 0.7f + 0.3f);
                 uint8_t b = 220 * (val * 0.7f + 0.3f);
-                img.setPixel(coord, sf::Color(r, g, b));
+                if (val < 0.05f) {
+                    img.setPixel(coord, color_table.at(eCellTypes::Air));
+                } else {
+                    img.setPixel(coord, sf::Color(r, g, b));
+                }
             } else if(type == eCellTypes::Solid) {
                 img.setPixel(coord, color_table.at(type));
             } else if(smoke[i * m_width + j] > 0.15f) {
